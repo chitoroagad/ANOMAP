@@ -1,0 +1,14 @@
+# Nmap 7.98 scan initiated Tue Dec 16 19:09:41 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_19-09-41 192.168.1.109/24
+Host: 192.168.1.1 (vodafone.broadband)	Status: Up
+Host: 192.168.1.1 (vodafone.broadband)	Ports: 53/open/tcp//domain//Cloudflare public DNS/, 80/open/tcp//http//nginx/, 139/open/tcp//netbios-ssn?///, 443/open/tcp//ssl|http//nginx/, 445/open/tcp//microsoft-ds?///, 631/open/tcp//ipp///, 5000/open/tcp//upnp?///, 6699/open/tcp//ssl|http//nginx/, 8080/open/tcp//http//nginx/, 9000/open/tcp//cslistener?///, 49152/open/tcp/////	Ignored State: closed (989)	OS: OpenWrt 19.07 (Linux 4.14)	Seq Index: 261	IP ID Seq: All zeros
+Host: 192.168.1.49 (Xiaomi-14-Ultra.broadband)	Status: Up
+Host: 192.168.1.49 (Xiaomi-14-Ultra.broadband)	Ports: 	Ignored State: closed (1000)	OS: LifeSize video conferencing system or ShoreTel 8800 VoIP phone (Linux 2.4)|Microsoft Windows Server 2003 Enterprise Edition
+Host: 192.168.1.98 ()	Status: Up
+Host: 192.168.1.98 ()	Ports: 8008/open/tcp//http?///, 8009/open/tcp//ssl|ajp13?///, 8443/open/tcp//ssl|https-alt?///, 9000/open/tcp//ssl|cslistener?///, 10001/open/tcp//ssl|scp-config?///	Ignored State: closed (995)	OS: Android 9 - 10 (Linux 4.9 - 4.14)	Seq Index: 262	IP ID Seq: All zeros
+Host: 192.168.1.148 (iPhone-7.broadband)	Status: Up
+Host: 192.168.1.148 (iPhone-7.broadband)	Ports: 49152/open/tcp//tcpwrapped///	OS: Apple macOS 11 (Big Sur) - 13 (Ventura) or iOS 16 (Darwin 20.6.0 - 22.4.0)	Seq Index: 262	IP ID Seq: All zeros
+Host: 192.168.1.195 ()	Status: Up
+Host: 192.168.1.195 ()	Ports: 8008/open/tcp//http?///, 8009/open/tcp//ssl|ajp13?///, 8443/open/tcp//ssl|https-alt?///, 9000/open/tcp//ssl|cslistener?///, 9080/open/tcp//glrpc?///, 10001/open/tcp//ssl|scp-config?///	Ignored State: closed (994)	OS: Android 9 - 10 (Linux 4.9 - 4.14)	Seq Index: 262	IP ID Seq: All zeros
+Host: 192.168.1.109 (LeMachine.broadband)	Status: Up
+Host: 192.168.1.109 (LeMachine.broadband)	Ports: 22/open/tcp//ssh//OpenSSH 10.2 (protocol 2.0)/	Ignored State: filtered (999)	OS: Linux 5.0 - 6.2	Seq Index: 262	IP ID Seq: All zeros
+# Nmap done at Tue Dec 16 19:15:23 2025 -- 256 IP addresses (6 hosts up) scanned in 342.46 seconds

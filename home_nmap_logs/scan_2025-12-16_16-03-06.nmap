@@ -1,0 +1,296 @@
+# Nmap 7.98 scan initiated Tue Dec 16 16:03:06 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_16-03-06 192.168.1.109/24
+Nmap scan report for vodafone.broadband (192.168.1.1)
+Host is up, received arp-response (0.0018s latency).
+Not shown: 989 closed tcp ports (reset)
+PORT      STATE SERVICE       REASON         VERSION
+53/tcp    open  domain        syn-ack ttl 64 Cloudflare public DNS
+80/tcp    open  http          syn-ack ttl 64 nginx
+139/tcp   open  netbios-ssn?  syn-ack ttl 64
+443/tcp   open  ssl/http      syn-ack ttl 64 nginx
+445/tcp   open  microsoft-ds? syn-ack ttl 64
+631/tcp   open  ipp           syn-ack ttl 64
+5000/tcp  open  upnp?         syn-ack ttl 64
+6699/tcp  open  ssl/http      syn-ack ttl 64 nginx
+8080/tcp  open  http          syn-ack ttl 64 nginx
+9000/tcp  open  cslistener?   syn-ack ttl 64
+49152/tcp open  unknown       syn-ack ttl 64
+2 services unrecognized despite returning data. If you know the service/version, please submit the following fingerprints at https://nmap.org/cgi-bin/submit.cgi?new-service :
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port631-TCP:V=7.98%I=7%D=12/16%Time=694182D6%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,25C,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nContent-Language:\x
+SF:20en_US\r\nContent-Length:\x20339\r\nContent-Type:\x20text/html;\x20cha
+SF:rset=utf-8\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:03:34\x20GMT\r\n
+SF:Accept-Encoding:\x20gzip,\x20deflate,\x20identity\r\nX-Frame-Options:\x
+SF:20DENY\r\nContent-Security-Policy:\x20frame-ancestors\x20'none'\r\n\r\n
+SF:<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTML\x204\.01\x20Transi
+SF:tional//EN\"\x20\"http://www\.w3\.org/TR/html4/loose\.dtd\">\n<HTML>\n<
+SF:HEAD>\n\t<META\x20HTTP-EQUIV=\"Content-Type\"\x20CONTENT=\"text/html;\x
+SF:20charset=utf-8\">\n\t<TITLE>Bad\x20Request\x20-\x20CUPS</TITLE>\n\t<LI
+SF:NK\x20REL=\"STYLESHEET\"\x20TYPE=\"text/css\"\x20HREF=\"/cups\.css\">\n
+SF:</HEAD>\n<BODY>\n<H1>Bad\x20Request</H1>\n<P></P>\n</BODY>\n</HTML>\n")
+SF:%r(HTTPOptions,25C,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nContent-Langu
+SF:age:\x20en_US\r\nContent-Length:\x20339\r\nContent-Type:\x20text/html;\
+SF:x20charset=utf-8\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:03:34\x20G
+SF:MT\r\nAccept-Encoding:\x20gzip,\x20deflate,\x20identity\r\nX-Frame-Opti
+SF:ons:\x20DENY\r\nContent-Security-Policy:\x20frame-ancestors\x20'none'\r
+SF:\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTML\x204\.01\x20
+SF:Transitional//EN\"\x20\"http://www\.w3\.org/TR/html4/loose\.dtd\">\n<HT
+SF:ML>\n<HEAD>\n\t<META\x20HTTP-EQUIV=\"Content-Type\"\x20CONTENT=\"text/h
+SF:tml;\x20charset=utf-8\">\n\t<TITLE>Bad\x20Request\x20-\x20CUPS</TITLE>\
+SF:n\t<LINK\x20REL=\"STYLESHEET\"\x20TYPE=\"text/css\"\x20HREF=\"/cups\.cs
+SF:s\">\n</HEAD>\n<BODY>\n<H1>Bad\x20Request</H1>\n<P></P>\n</BODY>\n</HTM
+SF:L>\n")%r(FourOhFourRequest,25C,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nC
+SF:ontent-Language:\x20en_US\r\nContent-Length:\x20339\r\nContent-Type:\x2
+SF:0text/html;\x20charset=utf-8\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x201
+SF:6:03:59\x20GMT\r\nAccept-Encoding:\x20gzip,\x20deflate,\x20identity\r\n
+SF:X-Frame-Options:\x20DENY\r\nContent-Security-Policy:\x20frame-ancestors
+SF:\x20'none'\r\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTML\
+SF:x204\.01\x20Transitional//EN\"\x20\"http://www\.w3\.org/TR/html4/loose\
+SF:.dtd\">\n<HTML>\n<HEAD>\n\t<META\x20HTTP-EQUIV=\"Content-Type\"\x20CONT
+SF:ENT=\"text/html;\x20charset=utf-8\">\n\t<TITLE>Bad\x20Request\x20-\x20C
+SF:UPS</TITLE>\n\t<LINK\x20REL=\"STYLESHEET\"\x20TYPE=\"text/css\"\x20HREF
+SF:=\"/cups\.css\">\n</HEAD>\n<BODY>\n<H1>Bad\x20Request</H1>\n<P></P>\n</
+SF:BODY>\n</HTML>\n");
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port9000-TCP:V=7.98%I=7%D=12/16%Time=694182DB%P=x86_64-pc-linux-gnu%r(G
+SF:etRequest,1AE,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nServer:\x20/\r\nCo
+SF:ntent-Type:\x20text/html\r\nConnection:\x20close\r\n\r\n<\?xml\x20versi
+SF:on=\"1\.0\"\x20encoding=\"UTF-8\"\x20\?>\n<!DOCTYPE\x20html\x20PUBLIC\x
+SF:20\"-//W3C//DTD\x20XHTML\x201\.1//EN\"\x20\"http://www\.w3\.org/TR/xhtm
+SF:l11/DTD/xhtml11\.dtd\">\n<html>\n<head><title>400\x20Bad\x20Request</ti
+SF:tle></head>\n<body>\n<h1>Bad\x20Request</h1>\n<p>You\x20tried\x20to\x20
+SF:connect\x20to\x20the\x20machine\x20the\x20proxy\x20is\x20running\x20on<
+SF:/p>\n<hr\x20/>\n<p><em>Generated\x20by\x20\x20version\x20\.</em></p>\n<
+SF:/body>\n</html>\n")%r(HTTPOptions,1AE,"HTTP/1\.0\x20400\x20Bad\x20Reque
+SF:st\r\nServer:\x20/\r\nContent-Type:\x20text/html\r\nConnection:\x20clos
+SF:e\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding=\"UTF-8\"\x20\?>\n<!DOC
+SF:TYPE\x20html\x20PUBLIC\x20\"-//W3C//DTD\x20XHTML\x201\.1//EN\"\x20\"htt
+SF:p://www\.w3\.org/TR/xhtml11/DTD/xhtml11\.dtd\">\n<html>\n<head><title>4
+SF:00\x20Bad\x20Request</title></head>\n<body>\n<h1>Bad\x20Request</h1>\n<
+SF:p>You\x20tried\x20to\x20connect\x20to\x20the\x20machine\x20the\x20proxy
+SF:\x20is\x20running\x20on</p>\n<hr\x20/>\n<p><em>Generated\x20by\x20\x20v
+SF:ersion\x20\.</em></p>\n</body>\n</html>\n")%r(RTSPRequest,190,"HTTP/1\.
+SF:0\x20400\x20Bad\x20Request\r\nServer:\x20/\r\nContent-Type:\x20text/htm
+SF:l\r\nConnection:\x20close\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding
+SF:=\"UTF-8\"\x20\?>\n<!DOCTYPE\x20html\x20PUBLIC\x20\"-//W3C//DTD\x20XHTM
+SF:L\x201\.1//EN\"\x20\"http://www\.w3\.org/TR/xhtml11/DTD/xhtml11\.dtd\">
+SF:\n<html>\n<head><title>400\x20Bad\x20Request</title></head>\n<body>\n<h
+SF:1>Bad\x20Request</h1>\n<p>Request\x20has\x20an\x20invalid\x20format</p>
+SF:\n<hr\x20/>\n<p><em>Generated\x20by\x20\x20version\x20\.</em></p>\n</bo
+SF:dy>\n</html>\n")%r(FourOhFourRequest,1AE,"HTTP/1\.0\x20400\x20Bad\x20Re
+SF:quest\r\nServer:\x20/\r\nContent-Type:\x20text/html\r\nConnection:\x20c
+SF:lose\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding=\"UTF-8\"\x20\?>\n<!
+SF:DOCTYPE\x20html\x20PUBLIC\x20\"-//W3C//DTD\x20XHTML\x201\.1//EN\"\x20\"
+SF:http://www\.w3\.org/TR/xhtml11/DTD/xhtml11\.dtd\">\n<html>\n<head><titl
+SF:e>400\x20Bad\x20Request</title></head>\n<body>\n<h1>Bad\x20Request</h1>
+SF:\n<p>You\x20tried\x20to\x20connect\x20to\x20the\x20machine\x20the\x20pr
+SF:oxy\x20is\x20running\x20on</p>\n<hr\x20/>\n<p><em>Generated\x20by\x20\x
+SF:20version\x20\.</em></p>\n</body>\n</html>\n");
+MAC Address: A0:B5:3C:CF:E9:58 (Technicolor Delivery Technologies Belgium NV)
+No exact OS matches for host (If you know what OS is running on it, see https://nmap.org/submit/ ).
+TCP/IP fingerprint:
+OS:SCAN(V=7.98%E=4%D=12/16%OT=53%CT=1%CU=33140%PV=Y%DS=1%DC=D%G=Y%M=A0B53C%
+OS:TM=69418381%P=x86_64-pc-linux-gnu)SEQ(SP=100%GCD=1%ISR=10F%TI=Z%CI=I%II=
+OS:I%TS=A)SEQ(SP=101%GCD=1%ISR=10D%TI=Z%CI=I%TS=A)SEQ(SP=103%GCD=2%ISR=10A%
+OS:TI=Z%CI=I%II=I%TS=A)SEQ(SP=105%GCD=1%ISR=10A%TI=Z%CI=I%II=I%TS=A)SEQ(SP=
+OS:FD%GCD=1%ISR=105%TI=Z%CI=I%II=I%TS=A)OPS(O1=M5B4ST11NW6%O2=M5B4ST11NW6%O
+OS:3=M5B4NNT11NW6%O4=M5B4ST11NW6%O5=M5B4ST11NW6%O6=M5B4ST11)WIN(W1=7120%W2=
+OS:7120%W3=7120%W4=7120%W5=7120%W6=7120)ECN(R=Y%DF=Y%T=40%W=7210%O=M5B4NNSN
+OS:W6%CC=N%Q=)T1(R=Y%DF=Y%T=40%S=O%A=S+%F=AS%RD=0%Q=)T2(R=N)T3(R=N)T4(R=Y%D
+OS:F=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)T5(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O
+OS:=%RD=0%Q=)T6(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)T7(R=N)U1(R=Y%DF=N
+OS:%T=40%IPL=164%UN=0%RIPL=G%RID=G%RIPCK=G%RUCK=G%RUD=G)IE(R=Y%DFI=N%T=40%C
+OS:D=S)
+
+Network Distance: 1 hop
+
+Nmap scan report for G08393012.broadband (192.168.1.64)
+Host is up, received arp-response (0.0088s latency).
+Not shown: 998 closed tcp ports (reset)
+PORT     STATE SERVICE     REASON         VERSION
+8000/tcp open  hik-connect syn-ack ttl 64 HikVision camera control
+9010/tcp open  sdr?        syn-ack ttl 64
+MAC Address: C0:E7:BF:44:C2:3A (Sichuan AI-Link Technology)
+Device type: general purpose
+Running: Linux 2.6.X|3.X
+OS CPE: cpe:/o:linux:linux_kernel:2.6 cpe:/o:linux:linux_kernel:3
+OS details: Linux 2.6.32 - 3.5
+Network Distance: 1 hop
+Service Info: Device: webcam
+
+Nmap scan report for Augustin06.broadband (192.168.1.75)
+Host is up, received arp-response (0.044s latency).
+All 1000 scanned ports on Augustin06.broadband (192.168.1.75) are in ignored states.
+Not shown: 1000 filtered tcp ports (no-response)
+MAC Address: F8:FE:5E:90:00:8D (Intel Corporate)
+Too many fingerprints match this host to give specific OS details
+Network Distance: 1 hop
+
+Nmap scan report for ET9C934EE10F28.broadband (192.168.1.105)
+Host is up, received arp-response (0.0039s latency).
+Not shown: 986 closed tcp ports (reset)
+PORT      STATE    SERVICE          REASON               VERSION
+21/tcp    filtered ftp              port-unreach ttl 254
+79/tcp    filtered finger           port-unreach ttl 254
+80/tcp    open     http             syn-ack ttl 254      Lexmark_Web_Server
+443/tcp   open     ssl/https        syn-ack ttl 254      Lexmark_Web_Server
+515/tcp   open     printer          syn-ack ttl 254      Lexmark lpd service
+631/tcp   open     ipp              syn-ack ttl 254      Lexmark_Web_Server
+4000/tcp  filtered remoteanything   port-unreach ttl 254
+5001/tcp  filtered commplex-link    port-unreach ttl 254
+9000/tcp  filtered cslistener       port-unreach ttl 254
+9002/tcp  filtered dynamid          port-unreach ttl 254
+9100/tcp  open     jetdirect?       syn-ack ttl 254
+9500/tcp  open     ismserver?       syn-ack ttl 254
+9898/tcp  filtered monkeycom        port-unreach ttl 254
+10000/tcp filtered snet-sensor-mgmt port-unreach ttl 254
+3 services unrecognized despite returning data. If you know the service/version, please submit the following fingerprints at https://nmap.org/cgi-bin/submit.cgi?new-service :
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port80-TCP:V=7.98%I=7%D=12/16%Time=694182D7%P=x86_64-pc-linux-gnu%r(Get
+SF:Request,39FE,"HTTP/1\.1\x20200\x20OK\r\nDate:\x20Tue,\x2016\x20Dec\x202
+SF:025\x2016:03:34\x20GMT\r\nServer:\x20Lexmark_Web_Server\r\nCache-Contro
+SF:l:\x20no-cache\r\nContent-Language:\x20en\r\nX-Frame-Options:\x20SAMEOR
+SF:IGIN\r\nX-XSS-Protection:\x201;\x20mode=block\r\nContent-Security-Polic
+SF:y:\x20\x20\x20\x20\x20default-src\x20'none';\x20\x20\x20\x20script-src\
+SF:x20'self'\x20'unsafe-eval'\x20'unsafe-inline';\x20\x20\x20\x20style-src
+SF:\x20'self'\x20'unsafe-inline';\x20\x20\x20\x20img-src\x20'self'\x20data
+SF::\x20https:;\x20\x20\x20\x20connect-src\x20\*;\x20\x20\x20\x20frame-src
+SF:\x20'self'\x20'unsafe-inline'\x20'unsafe-eval';\x20\x20\x20\x20font-src
+SF:\x20'self'\r\nX-Content-Type-Options:\x20nosniff\r\nConnection:\x20clos
+SF:e\r\nContent-Type:\x20text/html;\x20charset=UTF-8\r\n\r\n\n\n\n\n\n\n\n
+SF:\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n<!DOCTYPE\x20html\x20>\n<html\x20
+SF:lang=\"in\">\n<head>\n<meta\x20content=\"IE=edge\"\x20http-equiv=\"X-UA
+SF:-Compatible\"/>\n<meta\x20http-equiv=\"Content-Type\"\x20content=\"text
+SF:/html;\x20charset=UTF-8\"/>\n<title>Xerox\(R\)\x20B225\x20MFP</title>\n
+SF:<link\x20rel=\"stylesheet\"\x20type=\"text/css\"\x20href=\"/css/main\.c
+SF:ss\"\x20/>\n<link\x20rel=\"stylesheet\"\x20type=\"text/css\"\x20href=\"
+SF:/css/custom\.css\"\x20/>\n<lin")%r(HTTPOptions,1E9,"HTTP/1\.1\x20404\x2
+SF:0Not\x20Found\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:03:35\x20GMT\
+SF:r\nServer:\x20Lexmark_Web_Server\r\nX-Frame-Options:\x20SAMEORIGIN\r\nC
+SF:ache-Control:\x20no-cache\r\nX-XSS-Protection:\x201;\x20mode=block\r\nC
+SF:ontent-Security-Policy:\x20\x20\x20\x20\x20default-src\x20'none';\x20\x
+SF:20\x20\x20script-src\x20'self'\x20'unsafe-eval'\x20'unsafe-inline';\x20
+SF:\x20\x20\x20style-src\x20'self'\x20'unsafe-inline';\x20\x20\x20\x20img-
+SF:src\x20'self'\x20data:\x20https:;\x20\x20\x20\x20connect-src\x20\*;\x20
+SF:\x20\x20\x20frame-src\x20'self'\x20'unsafe-inline'\x20'unsafe-eval';\x2
+SF:0\x20\x20\x20font-src\x20'self'\r\nX-Content-Type-Options:\x20nosniff\r
+SF:\nConnection:\x20close\r\n\r\n")%r(RTSPRequest,1CA,"HTTP/1\.1\x20400\x2
+SF:0Bad\x20Request\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:03:36\x20GM
+SF:T\r\nServer:\x20Lexmark_Web_Server\r\nX-Frame-Options:\x20SAMEORIGIN\r\
+SF:nCache-Control:\x20no-cache\r\nContent-Length:\x20226\r\nConnection:\x2
+SF:0close\r\nContent-Type:\x20text/html;\x20charset=iso-8859-1\r\n\r\n<!DO
+SF:CTYPE\x20HTML\x20PUBLIC\x20\"-//IETF//DTD\x20HTML\x202\.0//EN\">\n<html
+SF:><head>\n<title>400\x20Bad\x20Request</title>\n</head><body>\n<h1>Bad\x
+SF:20Request</h1>\n<p>Your\x20browser\x20sent\x20a\x20request\x20that\x20t
+SF:his\x20server\x20could\x20not\x20understand\.<br\x20/>\n</p>\n</body></
+SF:html>\n");
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port443-TCP:V=7.98%T=SSL%I=7%D=12/16%Time=694182DD%P=x86_64-pc-linux-gn
+SF:u%r(GetRequest,213A,"HTTP/1\.1\x20200\x20OK\r\nDate:\x20Tue,\x2016\x20D
+SF:ec\x202025\x2016:03:40\x20GMT\r\nServer:\x20Lexmark_Web_Server\r\nCache
+SF:-Control:\x20no-cache\r\nContent-Language:\x20en\r\nX-Frame-Options:\x2
+SF:0SAMEORIGIN\r\nStrict-Transport-Security:\x20max-age=31536000;\x20inclu
+SF:deSubDomains\r\nX-XSS-Protection:\x201;\x20mode=block\r\nContent-Securi
+SF:ty-Policy:\x20\x20\x20\x20\x20default-src\x20'none';\x20\x20\x20\x20scr
+SF:ipt-src\x20'self'\x20'unsafe-eval'\x20'unsafe-inline';\x20\x20\x20\x20s
+SF:tyle-src\x20'self'\x20'unsafe-inline';\x20\x20\x20\x20img-src\x20'self'
+SF:\x20data:\x20https:;\x20\x20\x20\x20connect-src\x20\*;\x20\x20\x20\x20f
+SF:rame-src\x20'self'\x20'unsafe-inline'\x20'unsafe-eval';\x20\x20\x20\x20
+SF:font-src\x20'self'\r\nX-Content-Type-Options:\x20nosniff\r\nConnection:
+SF:\x20close\r\nContent-Type:\x20text/html;\x20charset=UTF-8\r\n\r\n\n\n\n
+SF:\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n<!DOCTYPE\x20html\x20>\n<
+SF:html\x20lang=\"in\">\n<head>\n<meta\x20content=\"IE=edge\"\x20http-equi
+SF:v=\"X-UA-Compatible\"/>\n<meta\x20http-equiv=\"Content-Type\"\x20conten
+SF:t=\"text/html;\x20charset=UTF-8\"/>\n<title>Xerox\(R\)\x20B225\x20MFP</
+SF:title>\n<link\x20rel=\"stylesheet\"\x20type=\"text/css\"\x20href=\"/css
+SF:/main\.css\"\x20/>\n<link")%r(HTTPOptions,229,"HTTP/1\.1\x20404\x20Not\
+SF:x20Found\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:03:41\x20GMT\r\nSe
+SF:rver:\x20Lexmark_Web_Server\r\nX-Frame-Options:\x20SAMEORIGIN\r\nCache-
+SF:Control:\x20no-cache\r\nStrict-Transport-Security:\x20max-age=31536000;
+SF:\x20includeSubDomains\r\nX-XSS-Protection:\x201;\x20mode=block\r\nConte
+SF:nt-Security-Policy:\x20\x20\x20\x20\x20default-src\x20'none';\x20\x20\x
+SF:20\x20script-src\x20'self'\x20'unsafe-eval'\x20'unsafe-inline';\x20\x20
+SF:\x20\x20style-src\x20'self'\x20'unsafe-inline';\x20\x20\x20\x20img-src\
+SF:x20'self'\x20data:\x20https:;\x20\x20\x20\x20connect-src\x20\*;\x20\x20
+SF:\x20\x20frame-src\x20'self'\x20'unsafe-inline'\x20'unsafe-eval';\x20\x2
+SF:0\x20\x20font-src\x20'self'\r\nX-Content-Type-Options:\x20nosniff\r\nCo
+SF:nnection:\x20close\r\n\r\n");
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port631-TCP:V=7.98%I=7%D=12/16%Time=694182D6%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,1AA,"HTTP/1\.1\x20404\x20Not\x20Found\r\nDate:\x20Tue,\x2016\x
+SF:20Dec\x202025\x2016:03:34\x20GMT\r\nServer:\x20Lexmark_Web_Server\r\nX-
+SF:Frame-Options:\x20SAMEORIGIN\r\nCache-Control:\x20no-cache\r\nContent-L
+SF:ength:\x20196\r\nConnection:\x20close\r\nContent-Type:\x20text/html;\x2
+SF:0charset=iso-8859-1\r\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//IETF//DT
+SF:D\x20HTML\x202\.0//EN\">\n<html><head>\n<title>404\x20Not\x20Found</tit
+SF:le>\n</head><body>\n<h1>Not\x20Found</h1>\n<p>The\x20requested\x20URL\x
+SF:20was\x20not\x20found\x20on\x20this\x20server\.</p>\n</body></html>\n")
+SF:%r(HTTPOptions,1AD,"HTTP/1\.1\x20403\x20Forbidden\r\nDate:\x20Tue,\x201
+SF:6\x20Dec\x202025\x2016:03:34\x20GMT\r\nServer:\x20Lexmark_Web_Server\r\
+SF:nX-Frame-Options:\x20SAMEORIGIN\r\nCache-Control:\x20no-cache\r\nConten
+SF:t-Length:\x20199\r\nConnection:\x20close\r\nContent-Type:\x20text/html;
+SF:\x20charset=iso-8859-1\r\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//IETF/
+SF:/DTD\x20HTML\x202\.0//EN\">\n<html><head>\n<title>403\x20Forbidden</tit
+SF:le>\n</head><body>\n<h1>Forbidden</h1>\n<p>You\x20don't\x20have\x20perm
+SF:ission\x20to\x20access\x20this\x20resource\.</p>\n</body></html>\n")%r(
+SF:RTSPRequest,1CA,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nDate:\x20Tue,\x2
+SF:016\x20Dec\x202025\x2016:03:39\x20GMT\r\nServer:\x20Lexmark_Web_Server\
+SF:r\nX-Frame-Options:\x20SAMEORIGIN\r\nCache-Control:\x20no-cache\r\nCont
+SF:ent-Length:\x20226\r\nConnection:\x20close\r\nContent-Type:\x20text/htm
+SF:l;\x20charset=iso-8859-1\r\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//IET
+SF:F//DTD\x20HTML\x202\.0//EN\">\n<html><head>\n<title>400\x20Bad\x20Reque
+SF:st</title>\n</head><body>\n<h1>Bad\x20Request</h1>\n<p>Your\x20browser\
+SF:x20sent\x20a\x20request\x20that\x20this\x20server\x20could\x20not\x20un
+SF:derstand\.<br\x20/>\n</p>\n</body></html>\n")%r(Help,1CA,"HTTP/1\.1\x20
+SF:400\x20Bad\x20Request\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:03:54
+SF:\x20GMT\r\nServer:\x20Lexmark_Web_Server\r\nX-Frame-Options:\x20SAMEORI
+SF:GIN\r\nCache-Control:\x20no-cache\r\nContent-Length:\x20226\r\nConnecti
+SF:on:\x20close\r\nContent-Type:\x20text/html;\x20charset=iso-8859-1\r\n\r
+SF:\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//IETF//DTD\x20HTML\x202\.0//EN\">\
+SF:n<html><head>\n<title>400\x20Bad\x20Request</title>\n</head><body>\n<h1
+SF:>Bad\x20Request</h1>\n<p>Your\x20browser\x20sent\x20a\x20request\x20tha
+SF:t\x20this\x20server\x20could\x20not\x20understand\.<br\x20/>\n</p>\n</b
+SF:ody></html>\n");
+MAC Address: F0:C8:14:7D:70:02 (Shenzhen Bilian Electronic，LTD)
+No exact OS matches for host (If you know what OS is running on it, see https://nmap.org/submit/ ).
+TCP/IP fingerprint:
+OS:SCAN(V=7.98%E=4%D=12/16%OT=80%CT=1%CU=42602%PV=Y%DS=1%DC=D%G=Y%M=F0C814%
+OS:TM=69418381%P=x86_64-pc-linux-gnu)SEQ(SP=100%GCD=1%ISR=10C%TI=Z%CI=Z%II=
+OS:I%TS=A)SEQ(SP=105%GCD=1%ISR=107%TI=Z%CI=Z%II=I%TS=A)SEQ(SP=106%GCD=1%ISR
+OS:=10B%TI=Z%CI=Z%II=I%TS=A)SEQ(SP=107%GCD=1%ISR=10A%TI=Z%CI=Z%II=I%TS=A)SE
+OS:Q(SP=108%GCD=1%ISR=10B%TI=Z%CI=Z%II=I%TS=A)OPS(O1=M5B4ST11NW6%O2=M5B4ST1
+OS:1NW6%O3=M5B4NNT11NW6%O4=M5B4ST11NW6%O5=M5B4ST11NW6%O6=M5B4ST11)WIN(W1=FE
+OS:88%W2=FE88%W3=FE88%W4=FE88%W5=FE88%W6=FE88)ECN(R=Y%DF=Y%T=FE%W=FAF0%O=M5
+OS:B4NNSNW6%CC=Y%Q=)T1(R=Y%DF=Y%T=FE%S=O%A=S+%F=AS%RD=0%Q=)T2(R=N)T3(R=N)T4
+OS:(R=Y%DF=Y%T=FE%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)T5(R=Y%DF=Y%T=FE%W=0%S=Z%A=S+%
+OS:F=AR%O=%RD=0%Q=)T6(R=Y%DF=Y%T=FE%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)T7(R=Y%DF=Y%
+OS:T=FE%W=0%S=Z%A=S+%F=AR%O=%RD=0%Q=)U1(R=Y%DF=N%T=FE%IPL=164%UN=0%RIPL=G%R
+OS:ID=G%RIPCK=G%RUCK=G%RUD=G)IE(R=Y%DFI=N%T=FE%CD=S)
+
+Network Distance: 1 hop
+Service Info: Device: printer
+
+Nmap scan report for 192.168.1.154
+Host is up, received arp-response (0.016s latency).
+All 1000 scanned ports on 192.168.1.154 are in ignored states.
+Not shown: 1000 closed tcp ports (reset)
+MAC Address: E8:C7:CF:59:50:61 (Wistron Neweb)
+Warning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port
+Aggressive OS guesses: Pioneer PRO-141 TV (95%), DMP XR500 remote alarm monitor (95%), Bush BFSAT01HD satellite receiver (95%), Sony PlayStation 2 game console (95%), AVtech AVC 773W digital video recorder (94%), Geist Watchdog 1250 atmospheric monitor (92%), OpenBSD 3.9 (92%), OpenBSD 4.4 (92%), Topfield TF6000PVR set top box (92%), TP-LINK TL-PS110U or TL-WPS4510U print server (92%)
+No exact OS matches for host (test conditions non-ideal).
+Network Distance: 1 hop
+
+Nmap scan report for LeMachine.broadband (192.168.1.109)
+Host is up, received localhost-response (0.000024s latency).
+Not shown: 999 filtered tcp ports (no-response)
+PORT   STATE SERVICE REASON         VERSION
+22/tcp open  ssh     syn-ack ttl 64 OpenSSH 10.2 (protocol 2.0)
+Warning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port
+Device type: general purpose
+Running: Linux 5.X|6.X
+OS CPE: cpe:/o:linux:linux_kernel:5 cpe:/o:linux:linux_kernel:6
+OS details: Linux 5.0 - 6.2
+Network Distance: 0 hops
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+# Nmap done at Tue Dec 16 16:06:32 2025 -- 256 IP addresses (6 hosts up) scanned in 206.02 seconds

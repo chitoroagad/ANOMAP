@@ -1,0 +1,14 @@
+# Nmap 7.98 scan initiated Tue Dec 16 17:39:11 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_17-39-11 192.168.1.109/24
+Host: 192.168.1.1 (vodafone.broadband)	Status: Up
+Host: 192.168.1.1 (vodafone.broadband)	Ports: 53/open/tcp//domain//Cloudflare public DNS/, 80/open/tcp//http//nginx/, 139/open/tcp//netbios-ssn?///, 443/open/tcp//ssl|http//nginx/, 445/open/tcp//microsoft-ds?///, 631/open/tcp//ipp///, 5000/open/tcp//upnp?///, 6699/open/tcp//ssl|http//nginx/, 8080/open/tcp//http//nginx/, 9000/open/tcp//cslistener?///, 49152/open/tcp/////	Ignored State: closed (989)	Seq Index: 249	IP ID Seq: All zeros
+Host: 192.168.1.64 (G08393012.broadband)	Status: Up
+Host: 192.168.1.64 (G08393012.broadband)	Ports: 8000/open/tcp//hik-connect//HikVision camera control/, 9010/open/tcp//sdr?///	Ignored State: closed (998)	OS: Linux 2.6.32 - 3.5	Seq Index: 260	IP ID Seq: All zeros
+Host: 192.168.1.73 (DESKTOP-T0AAJ3U.broadband)	Status: Up
+Host: 192.168.1.73 (DESKTOP-T0AAJ3U.broadband)	Ports: 135/open/tcp//msrpc//Microsoft Windows RPC/, 139/open/tcp//netbios-ssn//Microsoft Windows netbios-ssn/, 445/open/tcp//microsoft-ds?///, 1024/open/tcp//msrpc//Microsoft Windows RPC/, 5432/open/tcp//postgresql//PostgreSQL DB 8.1.3 - 8.1.4/	Ignored State: closed (995)	OS: Microsoft Windows 10 1709 - 21H2	Seq Index: 262	IP ID Seq: Incremental
+Host: 192.168.1.105 (ET9C934EE10F28.broadband)	Status: Up
+Host: 192.168.1.105 (ET9C934EE10F28.broadband)	Ports: 21/filtered/tcp//ftp///, 79/filtered/tcp//finger///, 80/open/tcp//http//Lexmark_Web_Server/, 443/open/tcp//ssl|https//Lexmark_Web_Server/, 515/open/tcp//printer//Lexmark lpd service/, 631/open/tcp//ipp//Lexmark_Web_Server/, 4000/filtered/tcp//remoteanything///, 5001/filtered/tcp//commplex-link///, 9000/filtered/tcp//cslistener///, 9002/filtered/tcp//dynamid///, 9100/open/tcp//jetdirect?///, 9500/open/tcp//ismserver?///, 9898/filtered/tcp//monkeycom///, 10000/filtered/tcp//snet-sensor-mgmt///	Ignored State: closed (986)	Seq Index: 256	IP ID Seq: All zeros
+Host: 192.168.1.154 ()	Status: Up
+Host: 192.168.1.154 ()	Ports: 	Ignored State: closed (1000)
+Host: 192.168.1.109 (LeMachine.broadband)	Status: Up
+Host: 192.168.1.109 (LeMachine.broadband)	Ports: 22/open/tcp//ssh//OpenSSH 10.2 (protocol 2.0)/	Ignored State: filtered (999)	OS: Linux 5.0 - 6.2	Seq Index: 259	IP ID Seq: All zeros
+# Nmap done at Tue Dec 16 17:42:27 2025 -- 256 IP addresses (6 hosts up) scanned in 195.33 seconds

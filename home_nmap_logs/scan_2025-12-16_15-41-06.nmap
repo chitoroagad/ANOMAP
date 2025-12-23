@@ -1,0 +1,1 @@
+# Nmap 7.98 scan initiated Tue Dec 16 15:41:06 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_15-41-06 192.168.1.109/24

@@ -1,0 +1,109 @@
+# Nmap 7.98 scan initiated Tue Dec 16 16:07:32 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_16-07-32 192.168.1.109/24
+Nmap scan report for vodafone.broadband (192.168.1.1)
+Host is up, received arp-response (0.0019s latency).
+Not shown: 989 closed tcp ports (reset)
+PORT      STATE SERVICE       REASON         VERSION
+53/tcp    open  domain        syn-ack ttl 64 Cloudflare public DNS
+80/tcp    open  http          syn-ack ttl 64 nginx
+139/tcp   open  netbios-ssn?  syn-ack ttl 64
+443/tcp   open  ssl/http      syn-ack ttl 64 nginx
+445/tcp   open  microsoft-ds? syn-ack ttl 64
+631/tcp   open  ipp           syn-ack ttl 64
+5000/tcp  open  upnp?         syn-ack ttl 64
+6699/tcp  open  ssl/http      syn-ack ttl 64 nginx
+8080/tcp  open  http          syn-ack ttl 64 nginx
+9000/tcp  open  cslistener?   syn-ack ttl 64
+49152/tcp open  unknown       syn-ack ttl 64
+2 services unrecognized despite returning data. If you know the service/version, please submit the following fingerprints at https://nmap.org/cgi-bin/submit.cgi?new-service :
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port631-TCP:V=7.98%I=7%D=12/16%Time=694183D1%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,25C,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nContent-Language:\x
+SF:20en_US\r\nContent-Length:\x20339\r\nContent-Type:\x20text/html;\x20cha
+SF:rset=utf-8\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:07:45\x20GMT\r\n
+SF:Accept-Encoding:\x20gzip,\x20deflate,\x20identity\r\nX-Frame-Options:\x
+SF:20DENY\r\nContent-Security-Policy:\x20frame-ancestors\x20'none'\r\n\r\n
+SF:<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTML\x204\.01\x20Transi
+SF:tional//EN\"\x20\"http://www\.w3\.org/TR/html4/loose\.dtd\">\n<HTML>\n<
+SF:HEAD>\n\t<META\x20HTTP-EQUIV=\"Content-Type\"\x20CONTENT=\"text/html;\x
+SF:20charset=utf-8\">\n\t<TITLE>Bad\x20Request\x20-\x20CUPS</TITLE>\n\t<LI
+SF:NK\x20REL=\"STYLESHEET\"\x20TYPE=\"text/css\"\x20HREF=\"/cups\.css\">\n
+SF:</HEAD>\n<BODY>\n<H1>Bad\x20Request</H1>\n<P></P>\n</BODY>\n</HTML>\n")
+SF:%r(HTTPOptions,25C,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nContent-Langu
+SF:age:\x20en_US\r\nContent-Length:\x20339\r\nContent-Type:\x20text/html;\
+SF:x20charset=utf-8\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x2016:07:45\x20G
+SF:MT\r\nAccept-Encoding:\x20gzip,\x20deflate,\x20identity\r\nX-Frame-Opti
+SF:ons:\x20DENY\r\nContent-Security-Policy:\x20frame-ancestors\x20'none'\r
+SF:\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTML\x204\.01\x20
+SF:Transitional//EN\"\x20\"http://www\.w3\.org/TR/html4/loose\.dtd\">\n<HT
+SF:ML>\n<HEAD>\n\t<META\x20HTTP-EQUIV=\"Content-Type\"\x20CONTENT=\"text/h
+SF:tml;\x20charset=utf-8\">\n\t<TITLE>Bad\x20Request\x20-\x20CUPS</TITLE>\
+SF:n\t<LINK\x20REL=\"STYLESHEET\"\x20TYPE=\"text/css\"\x20HREF=\"/cups\.cs
+SF:s\">\n</HEAD>\n<BODY>\n<H1>Bad\x20Request</H1>\n<P></P>\n</BODY>\n</HTM
+SF:L>\n")%r(FourOhFourRequest,25C,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nC
+SF:ontent-Language:\x20en_US\r\nContent-Length:\x20339\r\nContent-Type:\x2
+SF:0text/html;\x20charset=utf-8\r\nDate:\x20Tue,\x2016\x20Dec\x202025\x201
+SF:6:08:10\x20GMT\r\nAccept-Encoding:\x20gzip,\x20deflate,\x20identity\r\n
+SF:X-Frame-Options:\x20DENY\r\nContent-Security-Policy:\x20frame-ancestors
+SF:\x20'none'\r\n\r\n<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTML\
+SF:x204\.01\x20Transitional//EN\"\x20\"http://www\.w3\.org/TR/html4/loose\
+SF:.dtd\">\n<HTML>\n<HEAD>\n\t<META\x20HTTP-EQUIV=\"Content-Type\"\x20CONT
+SF:ENT=\"text/html;\x20charset=utf-8\">\n\t<TITLE>Bad\x20Request\x20-\x20C
+SF:UPS</TITLE>\n\t<LINK\x20REL=\"STYLESHEET\"\x20TYPE=\"text/css\"\x20HREF
+SF:=\"/cups\.css\">\n</HEAD>\n<BODY>\n<H1>Bad\x20Request</H1>\n<P></P>\n</
+SF:BODY>\n</HTML>\n");
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port9000-TCP:V=7.98%I=7%D=12/16%Time=694183D6%P=x86_64-pc-linux-gnu%r(G
+SF:etRequest,1AE,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nServer:\x20/\r\nCo
+SF:ntent-Type:\x20text/html\r\nConnection:\x20close\r\n\r\n<\?xml\x20versi
+SF:on=\"1\.0\"\x20encoding=\"UTF-8\"\x20\?>\n<!DOCTYPE\x20html\x20PUBLIC\x
+SF:20\"-//W3C//DTD\x20XHTML\x201\.1//EN\"\x20\"http://www\.w3\.org/TR/xhtm
+SF:l11/DTD/xhtml11\.dtd\">\n<html>\n<head><title>400\x20Bad\x20Request</ti
+SF:tle></head>\n<body>\n<h1>Bad\x20Request</h1>\n<p>You\x20tried\x20to\x20
+SF:connect\x20to\x20the\x20machine\x20the\x20proxy\x20is\x20running\x20on<
+SF:/p>\n<hr\x20/>\n<p><em>Generated\x20by\x20\x20version\x20\.</em></p>\n<
+SF:/body>\n</html>\n")%r(HTTPOptions,1AE,"HTTP/1\.0\x20400\x20Bad\x20Reque
+SF:st\r\nServer:\x20/\r\nContent-Type:\x20text/html\r\nConnection:\x20clos
+SF:e\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding=\"UTF-8\"\x20\?>\n<!DOC
+SF:TYPE\x20html\x20PUBLIC\x20\"-//W3C//DTD\x20XHTML\x201\.1//EN\"\x20\"htt
+SF:p://www\.w3\.org/TR/xhtml11/DTD/xhtml11\.dtd\">\n<html>\n<head><title>4
+SF:00\x20Bad\x20Request</title></head>\n<body>\n<h1>Bad\x20Request</h1>\n<
+SF:p>You\x20tried\x20to\x20connect\x20to\x20the\x20machine\x20the\x20proxy
+SF:\x20is\x20running\x20on</p>\n<hr\x20/>\n<p><em>Generated\x20by\x20\x20v
+SF:ersion\x20\.</em></p>\n</body>\n</html>\n")%r(RTSPRequest,190,"HTTP/1\.
+SF:0\x20400\x20Bad\x20Request\r\nServer:\x20/\r\nContent-Type:\x20text/htm
+SF:l\r\nConnection:\x20close\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding
+SF:=\"UTF-8\"\x20\?>\n<!DOCTYPE\x20html\x20PUBLIC\x20\"-//W3C//DTD\x20XHTM
+SF:L\x201\.1//EN\"\x20\"http://www\.w3\.org/TR/xhtml11/DTD/xhtml11\.dtd\">
+SF:\n<html>\n<head><title>400\x20Bad\x20Request</title></head>\n<body>\n<h
+SF:1>Bad\x20Request</h1>\n<p>Request\x20has\x20an\x20invalid\x20format</p>
+SF:\n<hr\x20/>\n<p><em>Generated\x20by\x20\x20version\x20\.</em></p>\n</bo
+SF:dy>\n</html>\n")%r(FourOhFourRequest,1AE,"HTTP/1\.0\x20400\x20Bad\x20Re
+SF:quest\r\nServer:\x20/\r\nContent-Type:\x20text/html\r\nConnection:\x20c
+SF:lose\r\n\r\n<\?xml\x20version=\"1\.0\"\x20encoding=\"UTF-8\"\x20\?>\n<!
+SF:DOCTYPE\x20html\x20PUBLIC\x20\"-//W3C//DTD\x20XHTML\x201\.1//EN\"\x20\"
+SF:http://www\.w3\.org/TR/xhtml11/DTD/xhtml11\.dtd\">\n<html>\n<head><titl
+SF:e>400\x20Bad\x20Request</title></head>\n<body>\n<h1>Bad\x20Request</h1>
+SF:\n<p>You\x20tried\x20to\x20connect\x20to\x20the\x20machine\x20the\x20pr
+SF:oxy\x20is\x20running\x20on</p>\n<hr\x20/>\n<p><em>Generated\x20by\x20\x
+SF:20version\x20\.</em></p>\n</body>\n</html>\n");
+MAC Address: A0:B5:3C:CF:E9:58 (Technicolor Delivery Technologies Belgium NV)
+Device type: general purpose
+Running: Linux 4.X
+OS CPE: cpe:/o:linux:linux_kernel:4.14
+OS details: OpenWrt 19.07 (Linux 4.14)
+Network Distance: 1 hop
+
+Nmap scan report for LeMachine.broadband (192.168.1.109)
+Host is up, received localhost-response (0.000028s latency).
+Not shown: 999 filtered tcp ports (no-response)
+PORT   STATE SERVICE REASON         VERSION
+22/tcp open  ssh     syn-ack ttl 64 OpenSSH 10.2 (protocol 2.0)
+Warning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port
+Device type: general purpose
+Running: Linux 5.X|6.X
+OS CPE: cpe:/o:linux:linux_kernel:5 cpe:/o:linux:linux_kernel:6
+OS details: Linux 5.0 - 6.2
+Network Distance: 0 hops
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+# Nmap done at Tue Dec 16 16:10:35 2025 -- 256 IP addresses (2 hosts up) scanned in 182.79 seconds

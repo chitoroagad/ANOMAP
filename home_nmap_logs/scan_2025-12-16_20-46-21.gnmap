@@ -1,0 +1,16 @@
+# Nmap 7.98 scan initiated Tue Dec 16 20:46:22 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_20-46-21 192.168.1.109/24
+Host: 192.168.1.1 (vodafone.broadband)	Status: Up
+Host: 192.168.1.1 (vodafone.broadband)	Ports: 53/open/tcp//domain//Cloudflare public DNS/, 80/open/tcp//http//nginx/, 139/open/tcp//netbios-ssn?///, 443/open/tcp//ssl|http//nginx/, 445/open/tcp//microsoft-ds?///, 631/open/tcp//ipp///, 5000/open/tcp//upnp?///, 6699/open/tcp//ssl|http//nginx/, 8080/open/tcp//http//nginx/, 9000/open/tcp//cslistener?///, 49152/open/tcp/////	Ignored State: closed (989)	OS: OpenWrt 19.07 (Linux 4.14)	Seq Index: 261	IP ID Seq: All zeros
+Host: 192.168.1.49 (Xiaomi-14-Ultra.broadband)	Status: Up
+Host: 192.168.1.49 (Xiaomi-14-Ultra.broadband)	Ports: 	Ignored State: closed (1000)
+Host: 192.168.1.86 (XBOXONE.broadband)	Status: Up
+Host: 192.168.1.86 (XBOXONE.broadband)	Ports: 	Ignored State: filtered (1000)
+Host: 192.168.1.98 ()	Status: Up
+Host: 192.168.1.98 ()	Ports: 8008/open/tcp//http?///, 8009/open/tcp//ssl|castv2//Ninja Sphere Chromecast driver/, 8443/open/tcp//ssl|https-alt?///, 9000/open/tcp//ssl|cslistener?///, 10001/open/tcp//ssl|scp-config?///	Ignored State: closed (995)	OS: Android 9 - 10 (Linux 4.9 - 4.14)	Seq Index: 263	IP ID Seq: All zeros
+Host: 192.168.1.148 (iPhone-7.broadband)	Status: Up
+Host: 192.168.1.148 (iPhone-7.broadband)	Ports: 49152/open/tcp//tcpwrapped///, 62078/open/tcp//iphone-sync?///	Ignored State: closed (998)
+Host: 192.168.1.195 ()	Status: Up
+Host: 192.168.1.195 ()	Ports: 8008/open/tcp//http?///, 8009/open/tcp//ssl|ajp13?///, 8443/open/tcp//ssl|https-alt?///, 9000/open/tcp//ssl|cslistener?///, 9080/filtered/tcp//glrpc///, 10001/open/tcp//ssl|scp-config?///	Ignored State: closed (994)	OS: Android 9 - 10 (Linux 4.9 - 4.14)	Seq Index: 261	IP ID Seq: All zeros
+Host: 192.168.1.109 (LeMachine.broadband)	Status: Up
+Host: 192.168.1.109 (LeMachine.broadband)	Ports: 22/open/tcp//ssh//OpenSSH 10.2 (protocol 2.0)/	Ignored State: filtered (999)	OS: Linux 5.0 - 6.2	Seq Index: 262	IP ID Seq: All zeros
+# Nmap done at Tue Dec 16 20:52:09 2025 -- 256 IP addresses (7 hosts up) scanned in 347.48 seconds
