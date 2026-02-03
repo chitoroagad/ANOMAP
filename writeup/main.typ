@@ -1,18 +1,25 @@
-#import "acmart-template.typ": (
-  acmart, acmart-ccs, acmart-keywords, acmart-ref, to-string,
+#import "template/template.typ": *
+
+#show table.cell.where(y: 0): strong
+#set table(
+  stroke: (x, y) => if y == 0 {
+    (bottom: 0.7pt + black)
+  },
 )
 
-#let cuhk = super(sym.suit.spade)
 #let title = [
-  A Tool to Detect IP Spoofing for System Admins
 ]
 #let authors = (
   (
     // Should I use string or content? It doesn't matter
     name: "Darius Chitoroaga",
     email: "darius.chitoroaga@pm.me",
-    department: [Department of Computer Science],
-    institute: [University College London],
+    affiliation: (
+      department: [Department of Computer Science],
+      institution: [University College London],
+      country: "United Kingdom",
+    ),
+    orcid: "0000-0000-0000-0000",
     // mark: super(sym.suit.diamond),
   ),
 )
@@ -36,16 +43,34 @@
 // )
 
 #show: acmart.with(
-  title: title,
-  authors: authors,
+  format: "acmsmall",
+  title: "A Tool to Detect IP Spoofing for System Admins",
+  authors: {
+    (
+      (
+        name: "Darius Chitoroaga",
+        email: "darius.chitoroaga.22@ucl.ac.uk",
+        orcid: "0000-0000-0000-0000",
+        affiliation: (
+          institution: "University College London",
+          city: "London",
+          country: "United Kingdom",
+        ),
+      ),
+    )
+  },
+  shortauthors: "Chitoroaga et al.",
   // control max number of columns for authors and affiliation
   // conference: conference,
-  doi: "nice",
   copyright: none,
   // Set review to submission ID for the review process or to "none" for the final version.
   // review: [\#001],
-  ncols-authors: 1,
-  ncols-body: 2,
+  acmJournal: "JACM",
+  acmVolume: 37,
+  acmNumber: 4,
+  acmArticle: 111,
+  acmMonth: 8,
+  acmYear: 2025,
 )
 
 
@@ -153,9 +178,94 @@ in identifying these "zombie" hosts or NATed environments
 When you run OS detection against a NATed IP, Nmap receives responses from potentially different devices on different ports.
 Port 80 might be forwarded to a Linux server (TTL 64), while Port 3389 is forwarded to a Windows box (TTL 128).
 
-=== Fingerprinting Methods
+=== Fingerprinting
+==== Decide invariants
+*Stable identity features that shouldn't change much*
+- OS family + version (Linux 5.10)
+- Device type hint (rounter/gateway/printer)
+- Vendor from MAC address (Technicolor Delivery Technologies Belgium NV)
+- Typical open ports
+- Typical services per port (nginx on 80/443/8080)
 
+*Volatile features*
+- Uptime
+- Exact TTL
+- Ephemeral ports (49152)
+- Number of closed ports
 
+_Should not let volatile features dominate embeddings_
+
+==== Normalise data into a canonical representation
+Small models need focused data to be useful. Should use a normalised schema such as:
+```json
+{
+  "os": "linux",
+  "os_version": "4.14",
+  "distribution": "openwrt",
+  "device_vendor": "technicolor",
+  "open_ports": [53,80,139,443,445,631,5000,6699,8080,9000,49152],
+  "services": {
+    "53": "dns",
+    "80": "http-nginx",
+    "443": "https-nginx",
+    "8080": "http-nginx",
+    "139": "netbios",
+    "445": "smb",
+    "631": "ipp",
+    "5000": "upnp"
+  },
+  "web_stack": ["nginx"],
+  "smb_exposed": true,
+  "printer_protocol": true,
+  "upnp_exposed": true
+}
+```
+
+==== Create Multiple Embeddings
+Use separate embeddings for different semantic groups.
+This allows us to explain similarity/difference later.
+Also means models don't get overloaded.
+
+#table(
+  columns: 2,
+  table.header([Group], [Purpose]),
+  [OS embedding], [Device class similarity],
+  [Port-set embedding], [Network posture],
+  [Service-stack embedding], [Application exposure],
+)
+
+/ *OS*: `Operating system: OpenWrt 19.07, Linux kernel 4.14, embedded router`
+/ *Ports*: `Open TCP ports: 53, 80, 139, 443, 445, 631, 5000, 6699, 8080, 9000, 49152`
+/ *Services*: `Services detected: DNS, nginx HTTP, nginx HTTPS, SMB, NetBIOS, IPP printing, UPnP`
+
+_Should test which parts should be paired, since could be useful to pair ports and the services running on them._
+
+==== Fingerprinting using similarity
+Networking data is often varied and hosts can change values for any reason, so classifying hosts is
+unlikely to be successful. Therefore, we rely on cosine similarity between embeddings. The similarities
+between different embedding classes can have different weights (OS > ports > services).
+
+==== Catching anomalies
+Use *delta-based scoring* based on an initial baseline for some host.
+i.e. for a certain host the baseline may be:
+- Ports: {53,80,443,139,445,631,5000,8080}
+- Services: nginx, SMB, IPP
+- OS: OpenWrt
+
+*Structural Anomalies*
+- New port appears
+- Service mismatch (`ssh` on 8080)
+- HTTP server changes from nginx to Apache
+
+*Semantic Anomalies*
+- Port profile embedding drifts from baseline
+- Service description no longer matches "router-like" (based on device hint)
+- OS embedding changes family
+
+==== Architecture (Pipeline)
+Nmap #sym.arrow Normalise #sym.arrow Feature Groups #sym.arrow Embeddings #sym.arrow
+
+Similarity vs baseline #sym.arrow Drift / Anomaly score #sym.arrow LLM takes action / summary
 
 #bibliography(
   "refs.bib",

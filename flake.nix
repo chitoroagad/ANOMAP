@@ -5,11 +5,6 @@
     flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    typix = {
-      url = "github:loqusion/typix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # Example of downloading icons from a non-flake source
     # font-awesome = {
     #   url = "github:FortAwesome/Font-Awesome";
@@ -20,20 +15,28 @@
   outputs = inputs @ {
     nixpkgs,
     flake-utils,
-    typix,
     ...
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
-      pythonPackages = pkgs.python313Packages;
-      typst = import ./writeup {
-        inherit nixpkgs typix flake-utils inputs system;
-      };
+      pythonPackages = pkgs.python314Packages;
     in {
-      apps = typst.apps;
-      devShells.typst = typst.devShells.typst;
+      devShells.writeup = pkgs.mkShell {
+        name = "typst-shell";
+        buildInputs = with pkgs; [
+          typst
+        ];
+        FONTCONFIG_FILE = pkgs.makeFontsConf {
+          fontDirectories = with pkgs; [
+            libertine
+            inconsolata
+            libertinus
+            texlivePackages.inconsolata
+          ];
+        };
+      };
       devShells.default = pkgs.mkShell {
-                name = "python-venv";
+        name = "python-venv";
         venvDir = "./.venv";
         buildInputs = with pythonPackages; [
           # A Python interpreter including the 'venv' module is required to bootstrap
@@ -47,10 +50,9 @@
           # Those are dependencies that we would like to use from nixpkgs, which will
           # add them to PYTHONPATH and thus make them accessible from within the venv.
           python-nmap
-
-          # fonts for writeup
-          pkgs.libertine
-          pkgs.inconsolata
+          langchain
+          langchain-ollama
+          xmltodict
         ];
 
         # Run this command, only after creating the virtual environment
