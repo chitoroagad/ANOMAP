@@ -1,8 +1,9 @@
 #! /usr/bin/env python
 
-import json
-import os
 import glob
+import json
+import logging
+import os
 from collections import defaultdict
 from pathlib import Path
 from pprint import pprint
@@ -11,6 +12,8 @@ from typing import List, TextIO
 import xmltodict
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
+
+from parser import NmapParser
 
 UNIMPORTANT_NMAP_FIELDS = [
     "@starttime",
@@ -50,6 +53,13 @@ for file_path in prompt_dir.iterdir():
         SYSTEM_PROMPTS.append((file_path.name, f.read()))
 
 
+logging.basicConfig(
+    filename="app.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+
+
 def say_hi_test():
     "Simple test to check what each chat model outputs based on the system prompt"
     output_dict = defaultdict(dict)
@@ -73,10 +83,6 @@ def say_hi_test():
         json.dump(output_dict, f, indent=2)
 
 
-def simple_home_test():
-    pass
-
-
 def jsonify(f: TextIO):
     """
     Takes an open nmap xml file and converts it to json while removing unnecessary fields
@@ -97,12 +103,49 @@ def jsonify(f: TextIO):
         print(e)
         print(f.name)
 
-def normalise_data(host_data:dict) -> dict:
-    os_type = host_data["os"]["osmatch"]["osclass"]["@type"]
-    os_name = host_data["os"]["osmatch"]["osclass"].pop("@vendor", False) or host_data["os"]["osmatch"]["osclass"].pop("@osfamily", None)
-    os_version = host_data["os"]["osmatch"]["osclass"]["@osgen"]
-    os_distribution = host_data["os"]["osmatch"]["@name"]
-    device_vendor = host_data["address"][""]
+
+def normalise_data(host_data: dict) -> dict:
+    out = {}
+    os: dict = host_data.get("os")
+    if not os:
+        logging.warning("No 'os' key in host_data")
+    else:
+        osmatch: dict | list = os.get("osmatch")
+        if not osmatch:
+            logging.warning("No 'osmatch' key in host_data['os']")
+        if isinstance(osmatch, list):
+            osmatch = osmatch[0]
+        else:
+            osclass: dict | list = osmatch.get("osclass")
+            if not osclass:
+                logging.warning("No 'osclass' key in host_data['os']['osmatch']")
+            if isinstance(osclass, list):
+                osclass = osclass[0]
+            else:
+                os_type = osclass.get("@type")
+                os_name = (
+                    osclass.get("@vendor")
+                    if osclass.get("@vendor")
+                    else osclass.get("@osfamily")
+                )
+                os_gen = osclass.get("@osgen")
+                os_distribution = osmatch.get("@name")
+                out["os"] = os_name
+                out["os_version"] = os_gen
+                out["os_type"] = os_type
+                out["distribution"] = os_distribution
+    address = host_data.get("address")
+    if not address:
+        logging.warning("No 'address' key in host_data")
+    else:
+        device_vendor = None
+        for addrs in address:
+            if "mac" in addrs:
+                device_vendor = addrs.get("@vendor")
+        if not device_vendor:
+            logging.warning("Device_vendor not found")
+        out["device_vendor"] = device_vendor
+    return out
 
 
 def parse_filename(name: str) -> str:
@@ -111,7 +154,16 @@ def parse_filename(name: str) -> str:
 
 
 if __name__ == "__main__":
-    files = glob.glob("../home_nmap_logs/*.xml")
+    # files = glob.glob("../home_nmap_logs/*.xml")
+    # for file in files:
+    #     with open(file) as f:
+    #         jsonify(f)
+    files = glob.glob("./data/*.json")
     for file in files:
         with open(file) as f:
-            jsonify(f)
+            data = json.load(f)
+            for host in data:
+                parser = NmapParser(host)
+                parser.parse()
+                pprint(parser.normalised_data)
+                print("\n=========================\n")

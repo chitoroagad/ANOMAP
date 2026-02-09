@@ -53,6 +53,8 @@
           langchain
           langchain-ollama
           xmltodict
+
+          pkgs.nmap
         ];
 
         # Run this command, only after creating the virtual environment
