@@ -20,8 +20,10 @@ class NmapParser:
 
     def parse(self):
         self._extract_os_data()
-        self._extract_device_vendor()
+        self._extract_device_vendor_and_address()
         self._extract_ports()
+
+        return self.normalised_data
 
     def _first_item(self, val: dict | list | None) -> dict | None:
         if isinstance(val, list):
@@ -52,36 +54,45 @@ class NmapParser:
                         }
                     )
 
-    def _extract_device_vendor(self):
+    def _extract_device_vendor_and_address(self):
         address = self.raw_data.get("address")
         vendor = None
+        mac_address = None
         if not address:
             logging.warning("No 'address' key in input data")
         else:
-            vendor = self._find_device_vendor(address)
+            vendor, mac_address = self._find_device_vendor_and_address(address)
         self.normalised_data["device_vendor"] = vendor
+        self.normalised_data["mac_address"] = mac_address
 
-    def _find_device_vendor(self, address):
+    def _find_device_vendor_and_address(self, address):
         address_iter = address if isinstance(address, list) else [address]
         for addr in address_iter:
-            vendor = self._check_address(addr)
+            vendor, mac_address = self._check_address_and_vendor(addr)
             if not vendor:
                 continue
-            return vendor
+            if not mac_address:
+                logging.error(f"No mac_address found for {address}")
+                continue
+            return vendor, mac_address
+        logging.warning(f"No valid address found for {address}")
+        return None, None
 
-    def _check_address(self, addr: dict):
+    def _check_address_and_vendor(self, addr: dict):
         addrtype = addr.get("@addrtype")
-        vendor = None
         if not addrtype:
             logging.warning(f"No '@addrtype' in address: {addr}")
-            return None
+            return None, None
 
+        vendor = None
+        mac_address = None
         if addrtype == "mac":
             vendor = addr.get("@vendor")
             if not vendor:
                 logging.warning(f"No '@vendor' key in mac address: {addr}")
+            mac_address = addr.get("@addr")
 
-        return vendor
+        return vendor, mac_address
 
     def _extract_ports(self):
         # excludes the "extra ports" field
@@ -94,7 +105,7 @@ class NmapParser:
             logging.warning("No 'port' field found in ports map")
             return
 
-        services, open_ports  = self._find_ports(ports_list)
+        services, open_ports = self._find_ports(ports_list)
         self.normalised_data.update({"open_ports": open_ports, "services": services})
 
     def _find_ports(self, ports: dict | list) -> PortsInfo:

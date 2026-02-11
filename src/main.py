@@ -1,5 +1,7 @@
 #! /usr/bin/env python
 
+from embedder import Embedder
+from typing import NamedTuple
 import glob
 import json
 import logging
@@ -58,7 +60,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-
 
 def say_hi_test():
     "Simple test to check what each chat model outputs based on the system prompt"
@@ -120,6 +121,10 @@ if __name__ == "__main__":
             data = json.load(f)
             for host in data:
                 parser = NmapParser(host)
-                parser.parse()
-                pprint(parser.normalised_data)
+                normalised_data = parser.parse()
+                embedder = Embedder("all-minilm:22m")
+                mac = normalised_data['mac_address']
+                embeddings = embedder.embed(normalised_data)
+                pprint(normalised_data)
+                pprint(embeddings)
                 print("\n=========================\n")
