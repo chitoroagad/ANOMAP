@@ -1,6 +1,0 @@
-# Nmap 7.98 scan initiated Tue Dec 16 19:00:47 2025 as: nmap -sS -sV -O --reason --stats-every 10s -T4 -oA ./home_nmap_logs/scan_2025-12-16_19-00-47 192.168.1.109/24
-Host: 192.168.1.1 (vodafone.broadband)	Status: Up
-Host: 192.168.1.1 (vodafone.broadband)	Ports: 53/open/tcp//domain//Cloudflare public DNS/, 80/open/tcp//http//nginx/, 139/open/tcp//netbios-ssn?///, 443/open/tcp//ssl|http//nginx/, 445/open/tcp//microsoft-ds?///, 631/open/tcp//ipp///, 5000/open/tcp//upnp?///, 6699/open/tcp//ssl|http//nginx/, 8080/open/tcp//http//nginx/, 9000/open/tcp//cslistener?///, 49152/open/tcp/////	Ignored State: closed (989)	Seq Index: 262	IP ID Seq: All zeros
-Host: 192.168.1.109 (LeMachine.broadband)	Status: Up
-Host: 192.168.1.109 (LeMachine.broadband)	Ports: 22/open/tcp//ssh//OpenSSH 10.2 (protocol 2.0)/	Ignored State: filtered (999)	OS: Linux 5.0 - 6.2	Seq Index: 263	IP ID Seq: All zeros
-# Nmap done at Tue Dec 16 19:03:56 2025 -- 256 IP addresses (2 hosts up) scanned in 188.79 seconds
