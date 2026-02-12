@@ -53,6 +53,7 @@
           langchain
           langchain-ollama
           xmltodict
+          sortedcontainers
 
           pkgs.nmap
         ];
