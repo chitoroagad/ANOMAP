@@ -20,7 +20,7 @@ class Embedder:
     def __init__(self, model_name: str):
         self.model = OllamaEmbeddings(model=model_name)
 
-    def embed(self, normalised_host_data):
+    def embed(self, normalised_host_data: NormalisedData) -> HostEmbedding | None:
         data = self._prep_to_embed(normalised_host_data)
         if data is None:
             logging.warning(f"Could not prep to embed {normalised_host_data}")

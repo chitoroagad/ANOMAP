@@ -13,6 +13,7 @@ import xmltodict
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from comparator import Comparator
 from embedder import Embedder
 from parser import NmapParser
 
@@ -123,8 +124,7 @@ if __name__ == "__main__":
             for host in data:
                 parser = NmapParser(host)
                 normalised_data = parser.parse()
-                pprint(normalised_data)
                 embedder = Embedder("all-minilm:22m")
-                embeddings = embedder.embed(normalised_data)
+                comparator = Comparator(embedder, "./data/")
                 # pprint(embeddings)
                 print("\n=========================\n")

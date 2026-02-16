@@ -91,7 +91,7 @@ class NmapParser:
             if vendor_address is not None:
                 vendor, mac, ipv4, ipv6 = vendor_address
         self.normalised_data["device_vendor"] = vendor
-        self.normalised_data["mac"] = mac
+        self.normalised_data["mac_address"] = mac
         self.normalised_data["ipv4"] = str(ipv4) if ipv4 else None
         self.normalised_data["ipv6"] = str(ipv6) if ipv6 else None
 
