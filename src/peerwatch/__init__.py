@@ -1,3 +1,4 @@
+from peerwatch.agent import *
 from peerwatch.comparator import *
 from peerwatch.embedder import *
 from peerwatch.parser import *

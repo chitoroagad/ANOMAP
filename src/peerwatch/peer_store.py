@@ -5,12 +5,12 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
-from peerwatch import util
-from peerwatch.parser import NormalisedData
-
 UNKNOWN_KEY = "unknown"
 PORT_JACCARD_THRESHOLD = 0.6
 SERVICE_CHANGE_SUSPICION = 1.0
+
+from peerwatch import util
+from peerwatch.parser import NormalisedData
 
 
 def _os_candidate_families(data: "NormalisedData") -> set[str]:  # noqa: F821

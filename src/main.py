@@ -14,6 +14,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from peerwatch import Comparator, NmapParser, PeerStore
+from peerwatch.agent import SuspiciousAgent
 
 UNIMPORTANT_NMAP_FIELDS = [
     "@starttime",
@@ -125,9 +126,10 @@ if __name__ == "__main__":
                 normalised_data = parser.parse()
                 peer_store.add_or_update_peer(normalised_data)
 
-    print(peer_store)
-    for peer in peer_store.peers.values():
-        if peer.suspicion_score:
-            print(peer.mac_address)
-            pprint(peer.identity_history)
-            print(peer.suspicion_score)
+    agent = SuspiciousAgent(
+        peer_store=peer_store,
+        output_dir="./reports",
+        model="phi4-mini:latest",
+        threshold=3.0,
+    )
+    agent.investigate_all()
