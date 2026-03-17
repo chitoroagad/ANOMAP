@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
+from peerwatch import util
 from peerwatch.parser import NormalisedData
 
 UNKNOWN_KEY = "unknown"
@@ -112,8 +113,8 @@ class PeerStore:
         """
         Checks peer for anomaly then adds/updates store
         """
-        mac = self._normalise_mac(data.mac_address)
-        ips = self._extract_ips(data)
+        mac = util._normalise_mac(data.mac_address)
+        ips = util._extract_ips(data)
 
         with self._lock:
             mac_id = self.mac_to_id.get(mac) if mac else None
@@ -147,7 +148,9 @@ class PeerStore:
     # Internal helpers
     # --------------------
 
-    def _check_incoming_fingerprint(self, prev: Peer, incoming_data: NormalisedData) -> float:
+    def _check_incoming_fingerprint(
+        self, prev: Peer, incoming_data: NormalisedData
+    ) -> float:
         comparison = self._compare_fingerprints(prev.metadata, incoming_data)
         suspicion = 0.0
 
@@ -314,7 +317,7 @@ class PeerStore:
         # 2. Port set — Jaccard similarity
         prev_ports = set(prev.open_ports)
         curr_ports = set(incoming.open_ports)
-        port_jaccard = PeerStore._jaccard_similarity(prev_ports, curr_ports)
+        port_jaccard = util._jaccard_similarity(prev_ports, curr_ports)
         if (prev_ports | curr_ports) and port_jaccard < PORT_JACCARD_THRESHOLD:
             events.append("port_profile_changed")
 
@@ -335,14 +338,20 @@ class PeerStore:
 
         # 4. Full identity shift — all three dimensions changed significantly.
         # No shared ports counts as a service change (nothing in common).
-        if not os_match and port_jaccard < 0.4 and (service_type_changes or not shared_ports):
+        if (
+            not os_match
+            and port_jaccard < 0.4
+            and (service_type_changes or not shared_ports)
+        ):
             events.append("full_identity_shift")
 
         # Overall score (0–1): weighted combination across the three dimensions.
         # OS score uses candidate Jaccard when available — partial overlap (e.g. Linux+Android
         # vs Linux) gives a score between 0 and 1 rather than hard 0/1.
         if prev_families and curr_families:
-            os_score = len(prev_families & curr_families) / len(prev_families | curr_families)
+            os_score = len(prev_families & curr_families) / len(
+                prev_families | curr_families
+            )
         else:
             os_score = 1.0 if os_match else 0.0
         service_match_rate = (
@@ -357,30 +366,6 @@ class PeerStore:
             events=events,
             overall_score=overall,
         )
-
-    @staticmethod
-    def _jaccard_similarity(a: set, b: set) -> float:
-        union = a | b
-        return len(a & b) / len(union) if union else 1.0
-
-    # --------------------
-    # Normalization helpers
-    # --------------------
-
-    @staticmethod
-    def _normalise_mac(mac: str | None) -> str | None:
-        if not mac or mac == UNKNOWN_KEY:
-            return None
-        return mac
-
-    @staticmethod
-    def _extract_ips(data: NormalisedData) -> set[str]:
-        ips = set()
-        if data.ipv4 and data.ipv4 != UNKNOWN_KEY:
-            ips.add(data.ipv4)
-        if data.ipv6 and data.ipv6 != UNKNOWN_KEY:
-            ips.add(data.ipv6)
-        return ips
 
     def __str__(self) -> str:
         return (
