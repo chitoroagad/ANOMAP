@@ -145,18 +145,11 @@ class PeerStore:
         self, prev: Peer, incoming_embeddings: PeerEmbeddings
     ) -> float:
         comparison = self._compare_peers(prev.embeddings, incoming_embeddings)
-        suspicion = prev.suspicion_score
+        suspicion = 0
         for event in comparison.events:
             prev.record_event(event)
         if "full_identity_shift" in comparison.events:
             suspicion += 2.0
-        # else:
-        #     if "os_fingerprint_changed" in comparison.events:
-        #         suspicion += 1.0
-        #     if "port_fingerprint_changed" in comparison.events:
-        #         suspicion += 0.7
-        #     if "service_fingerprint_changed" in comparison.events:
-        #         suspicion += 0.5
         elif "os_fingerprint_changed" in comparison.events:
             suspicion += 1.0
         elif "overall_score" in comparison.events:
