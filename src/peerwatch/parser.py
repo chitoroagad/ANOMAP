@@ -16,6 +16,11 @@ class NormalisedData(BaseModel):
     device_vendor: str = Field(default="unknown")
     open_ports: list[int] = Field(default=[])
     services: dict[int, str] = Field(default={})
+    # All OS family candidates nmap returned, mapped to their best accuracy score (0-100).
+    # e.g. {"Linux": 96, "Google": 93} means nmap thinks Linux is most likely but Android is
+    # plausible. Used for set-based OS comparison to avoid false positives from nmap's
+    # non-deterministic top pick.
+    os_candidates: dict[str, int] = Field(default={})
     generated_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -60,25 +65,44 @@ class NmapParser:
         os_data = self.raw_data.get("os")
         if not os_data:
             logging.warning("No 'os' key in input data")
+            return
+
+        all_osmatches = os_data.get("osmatch")
+        if not all_osmatches:
+            logging.warning(f"No 'osmatch' key in {os_data}")
+            return
+
+        osmatches = all_osmatches if isinstance(all_osmatches, list) else [all_osmatches]
+
+        # Primary fields from the top-ranked osmatch (first entry, highest accuracy)
+        top_osmatch = osmatches[0]
+        top_osclass: dict | None = self._first_item(top_osmatch.get("osclass"))
+        if not top_osclass:
+            logging.warning("No 'osclass' key in host_data['os']['osmatch']")
         else:
-            osmatch: dict | None = self._first_item(os_data.get("osmatch"))
-            if not osmatch:
-                logging.warning(f"No 'osmatch' key in {os_data}")
-            else:
-                osclass: dict | None = self._first_item(osmatch.get("osclass"))
-                if not osclass:
-                    logging.warning("No 'osclass' key in host_data['os']['osmatch']")
-                else:
-                    self.normalised_data.update(
-                        {
-                            "os": osclass.get("@vendor")
-                            if osclass.get("@vendor")
-                            else osclass.get("@osfamily"),
-                            "os_type": osclass.get("@type"),
-                            "os_version": osclass.get("@osgen"),
-                            "distribution": osmatch.get("@name"),
-                        }
-                    )
+            self.normalised_data.update(
+                {
+                    "os": top_osclass.get("@vendor") or top_osclass.get("@osfamily"),
+                    "os_type": top_osclass.get("@type"),
+                    "os_version": top_osclass.get("@osgen"),
+                    "distribution": top_osmatch.get("@name"),
+                }
+            )
+
+        # Collect all candidate OS families across every osmatch entry.
+        # For each family, keep the highest accuracy score seen.
+        candidates: dict[str, int] = {}
+        for match in osmatches:
+            accuracy = int(match.get("@accuracy", 0))
+            classes = match.get("osclass", [])
+            classes = classes if isinstance(classes, list) else [classes]
+            for osclass in classes:
+                family = osclass.get("@vendor") or osclass.get("@osfamily")
+                if family:
+                    candidates[family] = max(candidates.get(family, 0), accuracy)
+
+        if candidates:
+            self.normalised_data["os_candidates"] = candidates
 
     def _extract_device_vendor_and_address(self):
         address_field = self.raw_data.get("address")

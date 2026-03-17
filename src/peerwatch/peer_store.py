@@ -12,6 +12,16 @@ PORT_JACCARD_THRESHOLD = 0.6
 SERVICE_CHANGE_SUSPICION = 1.0
 
 
+def _os_candidate_families(data: "NormalisedData") -> set[str]:  # noqa: F821
+    """Return the set of OS family names from all nmap candidates.
+    Falls back to the single os field when no candidates were parsed."""
+    if data.os_candidates:
+        return set(data.os_candidates.keys())
+    if data.os != UNKNOWN_KEY:
+        return {data.os}
+    return set()
+
+
 class IdentityEvent(BaseModel):
     timestamp: datetime
     event: str
@@ -287,10 +297,17 @@ class PeerStore:
     ) -> "PeerStore.FingerprintComparison":  # noqa: F821
         events = []
 
-        # 1. OS family — categorical match
-        # Skip comparison when either side is unknown (insufficient nmap data)
-        os_unknown = prev.os == "unknown" or incoming.os == "unknown"
-        os_match = os_unknown or prev.os == incoming.os
+        # 1. OS family — compare candidate sets rather than single top pick.
+        # nmap's top-ranked OS can vary between scans on the same device (e.g. a TV that
+        # scores Sony/Pioneer/Bush all at 95% may flip each scan). Using the full set of
+        # candidate families means any overlap between scans counts as a match, so only a
+        # genuinely new OS family (e.g. Linux → Windows) raises the alarm.
+        prev_families = _os_candidate_families(prev)
+        curr_families = _os_candidate_families(incoming)
+        if not prev_families or not curr_families:
+            os_match = True  # insufficient data to compare
+        else:
+            os_match = bool(prev_families & curr_families)
         if not os_match:
             events.append("os_family_changed")
 
@@ -321,8 +338,13 @@ class PeerStore:
         if not os_match and port_jaccard < 0.4 and (service_type_changes or not shared_ports):
             events.append("full_identity_shift")
 
-        # Overall score (0–1): weighted combination across the three dimensions
-        os_score = 1.0 if os_match else 0.0
+        # Overall score (0–1): weighted combination across the three dimensions.
+        # OS score uses candidate Jaccard when available — partial overlap (e.g. Linux+Android
+        # vs Linux) gives a score between 0 and 1 rather than hard 0/1.
+        if prev_families and curr_families:
+            os_score = len(prev_families & curr_families) / len(prev_families | curr_families)
+        else:
+            os_score = 1.0 if os_match else 0.0
         service_match_rate = (
             1.0 - len(service_type_changes) / len(shared_ports) if shared_ports else 1.0
         )

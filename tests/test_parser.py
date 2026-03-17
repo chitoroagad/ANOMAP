@@ -159,6 +159,59 @@ class TestNmapParser:
 
         assert 22 in result.open_ports
 
+    def test_parse_os_candidates_populated(self):
+        host_data = {
+            "os": {
+                "osmatch": [
+                    {
+                        "@name": "OpenWrt 21.02",
+                        "@accuracy": "96",
+                        "osclass": {"@vendor": "Linux", "@osfamily": "Linux", "@osgen": "5.X"},
+                    },
+                    {
+                        "@name": "Android 10",
+                        "@accuracy": "93",
+                        "osclass": [
+                            {"@vendor": "Google", "@osfamily": "Android", "@osgen": "10.X"},
+                            {"@vendor": "Linux", "@osfamily": "Linux", "@osgen": "4.X"},
+                        ],
+                    },
+                ]
+            },
+            "address": [{"@addr": "192.168.1.1", "@addrtype": "ipv4"}],
+        }
+
+        result = NmapParser(host_data).parse()
+
+        assert "Linux" in result.os_candidates
+        assert "Google" in result.os_candidates
+        assert result.os_candidates["Linux"] == 96   # max accuracy across both matches
+        assert result.os_candidates["Google"] == 93
+        assert result.os == "Linux"                  # top pick unchanged
+
+    def test_parse_os_candidates_best_accuracy_kept(self):
+        # Linux appears in two matches at different accuracies — keep the higher one
+        host_data = {
+            "os": {
+                "osmatch": [
+                    {
+                        "@name": "Match A",
+                        "@accuracy": "90",
+                        "osclass": {"@vendor": "Linux", "@osfamily": "Linux"},
+                    },
+                    {
+                        "@name": "Match B",
+                        "@accuracy": "95",
+                        "osclass": {"@vendor": "Linux", "@osfamily": "Linux"},
+                    },
+                ]
+            },
+            "address": [{"@addr": "192.168.1.1", "@addrtype": "ipv4"}],
+        }
+
+        result = NmapParser(host_data).parse()
+        assert result.os_candidates["Linux"] == 95
+
     def test_parse_uses_os_vendor_over_osfamily(self):
         host_data = {
             "os": {

@@ -151,6 +151,36 @@ class TestFingerprintComparison:
         assert "os_family_changed" in result.events
         assert result.os_match is False
 
+    def test_os_candidate_overlap_suppresses_false_positive(self):
+        # Simulates a TV/media device where nmap's top pick flips between Sony and Pioneer.
+        # Both scans have overlapping candidates so no alert should fire.
+        prev = self._data(os="Sony", os_candidates={"Sony": 95, "Pioneer": 95, "Bush": 95})
+        incoming = self._data(os="Pioneer", os_candidates={"Pioneer": 95, "Bush": 95, "Sony": 95})
+        result = PeerStore._compare_fingerprints(prev, incoming)
+
+        assert "os_family_changed" not in result.events
+        assert result.os_match is True
+
+    def test_os_candidate_no_overlap_triggers_event(self):
+        # Linux device suddenly fingerprints as Windows with no shared families.
+        prev = self._data(os="Linux", os_candidates={"Linux": 96})
+        incoming = self._data(os="Windows", os_candidates={"Microsoft": 95})
+        result = PeerStore._compare_fingerprints(prev, incoming)
+
+        assert "os_family_changed" in result.events
+        assert result.os_match is False
+
+    def test_os_partial_candidate_overlap_scores_between_0_and_1(self):
+        # Two candidates in prev, one shared with incoming — overlap is partial.
+        prev = self._data(os="Linux", os_candidates={"Linux": 96, "Google": 93})
+        incoming = self._data(os="Linux", os_candidates={"Linux": 96})
+        result = PeerStore._compare_fingerprints(prev, incoming)
+
+        assert result.os_match is True
+        # os_score = 1/2 = 0.5, ports Jaccard = 1.0 (both empty), service = 1.0
+        # overall = 0.5*0.5 + 0.3*1.0 + 0.2*1.0 = 0.75
+        assert result.overall_score == pytest.approx(0.75)
+
     def test_os_unknown_does_not_trigger_event(self):
         prev = self._data(os="unknown", open_ports=[22])
         incoming = self._data(os="Linux", open_ports=[22])
