@@ -13,7 +13,7 @@ import xmltodict
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from peerwatch import Comparator, Embedder, NmapParser, PeerStore
+from peerwatch import Comparator, NmapParser, PeerStore
 
 UNIMPORTANT_NMAP_FIELDS = [
     "@starttime",
@@ -117,17 +117,17 @@ if __name__ == "__main__":
     #         jsonify(f)
     files = glob.glob("./data/*.json")
     peer_store = PeerStore()
-    embedder = Embedder("all-minilm:22m")
-    # comparator = Comparator(embedder, "./data/")
     for file in files:
         with open(file) as f:
             data = json.load(f)
             for host in data:
                 parser = NmapParser(host)
                 normalised_data = parser.parse()
-                embeddings = embedder.embed(normalised_data)
-                if embeddings is not None:
-                    peer_store.add_or_update_peer(normalised_data, embeddings)
-                    # print("added host to peer store")
+                peer_store.add_or_update_peer(normalised_data)
 
     print(peer_store)
+    for peer in peer_store.peers.values():
+        if peer.suspicion_score:
+            print(peer.mac_address)
+            pprint(peer.identity_history)
+            print(peer.suspicion_score)

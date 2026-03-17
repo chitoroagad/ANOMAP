@@ -3,16 +3,13 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
-import numpy as np
 from pydantic import BaseModel, Field
 
-from peerwatch.embedder import PeerEmbeddings
 from peerwatch.parser import NormalisedData
 
 UNKNOWN_KEY = "unknown"
-OS_SIMILARITY_THRESHOLD = 0.92
-PORT_SIMILARITY_THRESHOLD = 0.80
-SERVICE_SIMILARITY_THRESHOLD = 0.75
+PORT_JACCARD_THRESHOLD = 0.6
+SERVICE_CHANGE_SUSPICION = 1.0
 
 
 class IdentityEvent(BaseModel):
@@ -34,8 +31,9 @@ class Peer(BaseModel):
     suspicion_score: float = 0.0  # increases with conflicting observations
 
     metadata: NormalisedData
-    embeddings: PeerEmbeddings
-
+    # All service types ever seen per port — used to suppress oscillation false positives.
+    # e.g. {8009: {"ajp13", "castv2"}} means both have been observed and neither is novel.
+    known_services: dict[int, set[str]] = Field(default_factory=dict)
     metadata_history: list[NormalisedData] = Field(default_factory=list)
     identity_history: list[IdentityEvent] = Field(default_factory=list)
 
@@ -68,12 +66,12 @@ class PeerStore:
     The store preserves historical observations to support forensic analysis.
     """
 
-    class EmbeddingComparison(BaseModel):
-        os_similarity: float
-        port_similarity: float
-        service_similarity: float
-        overall_score: float
+    class FingerprintComparison(BaseModel):
+        os_match: bool
+        port_jaccard: float
+        service_type_changes: dict[int, list[str]]  # port → [old_service, new_service]
         events: list[str]
+        overall_score: float
 
     peers: dict[str, Peer]
     mac_to_id: dict[str, str]
@@ -100,9 +98,7 @@ class PeerStore:
 
             return None
 
-    def add_or_update_peer(
-        self, data: NormalisedData, embeddings: PeerEmbeddings
-    ) -> Peer:
+    def add_or_update_peer(self, data: NormalisedData) -> Peer:
         """
         Checks peer for anomaly then adds/updates store
         """
@@ -116,18 +112,18 @@ class PeerStore:
             candidate_ids = set(filter(None, [mac_id])) | ip_ids
 
             if not candidate_ids:
-                peer = self._create_peer(mac, ips, data, embeddings)
+                peer = self._create_peer(mac, ips, data)
                 return peer
 
             if len(candidate_ids) == 1:
                 peer = self.peers[next(iter(candidate_ids))]
-                suspicion = self._check_incoming_embeddings(peer, embeddings)
-                self._update_peer(peer, mac, ips, data, embeddings)
+                suspicion = self._check_incoming_fingerprint(peer, data)
+                self._update_peer(peer, mac, ips, data)
                 peer.suspicion_score += suspicion
                 return peer
 
             # Multiple candidates → possible spoofing or identity collision
-            peer = self._resolve_conflict(candidate_ids, mac, ips, data, embeddings)
+            peer = self._resolve_conflict(candidate_ids, mac, ips, data)
             return peer
 
     def reset(self):
@@ -141,20 +137,41 @@ class PeerStore:
     # Internal helpers
     # --------------------
 
-    def _check_incoming_embeddings(
-        self, prev: Peer, incoming_embeddings: PeerEmbeddings
-    ) -> float:
-        comparison = self._compare_peers(prev.embeddings, incoming_embeddings)
-        suspicion = 0
+    def _check_incoming_fingerprint(self, prev: Peer, incoming_data: NormalisedData) -> float:
+        comparison = self._compare_fingerprints(prev.metadata, incoming_data)
+        suspicion = 0.0
+
         for event in comparison.events:
-            prev.record_event(event)
+            if event == "service_type_changed":
+                continue  # recorded per-port below
+            prev.record_event(event, port_jaccard=comparison.port_jaccard)
+
+        for port, (old_svc, new_svc) in comparison.service_type_changes.items():
+            new_type = new_svc.split("-")[0] if new_svc else ""
+            if new_type in prev.known_services.get(port, set()):
+                # This service type has been seen before on this port — oscillation, not a
+                # real change. Silently re-add the old type so it stays in the known set.
+                old_type = old_svc.split("-")[0] if old_svc else ""
+                if old_type:
+                    prev.known_services.setdefault(port, set()).add(old_type)
+                continue
+
+            prev.record_event(
+                "service_type_changed",
+                port=port,
+                old_service=old_svc,
+                new_service=new_svc,
+            )
+            suspicion += SERVICE_CHANGE_SUSPICION
+            if new_type:
+                prev.known_services.setdefault(port, set()).add(new_type)
+
         if "full_identity_shift" in comparison.events:
             suspicion += 2.0
-        elif "os_fingerprint_changed" in comparison.events:
-            suspicion += 1.0
-        elif "overall_score" in comparison.events:
+        if "os_family_changed" in comparison.events:
+            suspicion += 2.0
+        if "port_profile_changed" in comparison.events:
             suspicion += 0.5
-
         return suspicion
 
     def _create_peer(
@@ -162,13 +179,18 @@ class PeerStore:
         mac: str | None,
         ips: set[str],
         data: NormalisedData,
-        embeddings: PeerEmbeddings,
     ) -> Peer:
+        known_services: dict[int, set[str]] = {}
+        for port, svc in data.services.items():
+            svc_type = svc.split("-")[0] if svc else ""
+            if svc_type:
+                known_services[port] = {svc_type}
+
         peer = Peer.model_construct(
             mac_address=mac,
             ips=set(ips),
             metadata=data,
-            embeddings=embeddings,
+            known_services=known_services,
             is_volatile=True if mac else False,
         )
 
@@ -188,11 +210,9 @@ class PeerStore:
         mac: str | None,
         ips: set[str],
         data: NormalisedData,
-        embeddings: PeerEmbeddings,
     ):
         peer.metadata_history.append(peer.metadata)
         peer.metadata = data
-        peer.embeddings = embeddings
 
         if mac and peer.mac_address and mac != peer.mac_address:
             peer.suspicion_score += 0.5
@@ -217,7 +237,6 @@ class PeerStore:
         mac: str | None,
         ips: set[str],
         data: NormalisedData,
-        embeddings: PeerEmbeddings,
     ) -> Peer:
         # Choose highest confidence peer as survivor
         peers = [self.peers[i] for i in candidate_ids]
@@ -237,7 +256,7 @@ class PeerStore:
             self._merge_peers(survivor, peer)
 
         print(f"Resolving conflict between {peers}")
-        self._update_peer(survivor, mac, ips, data, embeddings)
+        self._update_peer(survivor, mac, ips, data)
         return survivor
 
     def _merge_peers(self, survivor: Peer, ghost: Peer):
@@ -255,45 +274,72 @@ class PeerStore:
             survivor.mac_address = ghost.mac_address
             self.mac_to_id[survivor.mac_address] = survivor.internal_id
 
+        for port, types in ghost.known_services.items():
+            survivor.known_services.setdefault(port, set()).update(types)
+
         survivor.record_event("peer_merged", ghost_id=ghost.internal_id)
 
         del self.peers[ghost.internal_id]
 
     @staticmethod
-    def _compare_peers(
-        prev: PeerEmbeddings, incoming: PeerEmbeddings
-    ) -> PeerStore.EmbeddingComparison:  # noqa: F821
-        os_sim = PeerStore._cosine_similarity(prev.os, incoming.os)
-        port_sim = PeerStore._cosine_similarity(prev.port_set, incoming.port_set)
-        service_sim = PeerStore._cosine_similarity(prev.services, incoming.services)
-
+    def _compare_fingerprints(
+        prev: NormalisedData, incoming: NormalisedData
+    ) -> "PeerStore.FingerprintComparison":  # noqa: F821
         events = []
 
-        if os_sim < OS_SIMILARITY_THRESHOLD:
-            events.append("os_fingerprint_changed")
+        # 1. OS family — categorical match
+        # Skip comparison when either side is unknown (insufficient nmap data)
+        os_unknown = prev.os == "unknown" or incoming.os == "unknown"
+        os_match = os_unknown or prev.os == incoming.os
+        if not os_match:
+            events.append("os_family_changed")
 
-        if port_sim < PORT_SIMILARITY_THRESHOLD:
-            events.append("port_fingerprint_changed")
+        # 2. Port set — Jaccard similarity
+        prev_ports = set(prev.open_ports)
+        curr_ports = set(incoming.open_ports)
+        port_jaccard = PeerStore._jaccard_similarity(prev_ports, curr_ports)
+        if (prev_ports | curr_ports) and port_jaccard < PORT_JACCARD_THRESHOLD:
+            events.append("port_profile_changed")
 
-        if service_sim < SERVICE_SIMILARITY_THRESHOLD:
-            events.append("service_fingerprint_changed")
+        # 3. Service type on shared ports
+        # Only the protocol type (first part of "ssh-OpenSSH") is checked — version
+        # changes within the same protocol are expected and not suspicious.
+        shared_ports = prev_ports & curr_ports
+        service_type_changes: dict[int, list[str]] = {}
+        for port in shared_ports:
+            old_svc = prev.services.get(port, "")
+            new_svc = incoming.services.get(port, "")
+            old_type = old_svc.split("-")[0] if old_svc else ""
+            new_type = new_svc.split("-")[0] if new_svc else ""
+            if old_type and new_type and old_type != new_type:
+                service_type_changes[port] = [old_svc, new_svc]
+        if service_type_changes:
+            events.append("service_type_changed")
 
-        overall = 0.5 * os_sim + 0.3 * port_sim + 0.2 * service_sim
-
-        if os_sim < 0.7 and port_sim < 0.7 and service_sim < 0.7:
+        # 4. Full identity shift — all three dimensions changed significantly.
+        # No shared ports counts as a service change (nothing in common).
+        if not os_match and port_jaccard < 0.4 and (service_type_changes or not shared_ports):
             events.append("full_identity_shift")
 
-        return PeerStore.EmbeddingComparison(
-            os_similarity=os_sim,
-            port_similarity=port_sim,
-            service_similarity=service_sim,
-            overall_score=overall,
+        # Overall score (0–1): weighted combination across the three dimensions
+        os_score = 1.0 if os_match else 0.0
+        service_match_rate = (
+            1.0 - len(service_type_changes) / len(shared_ports) if shared_ports else 1.0
+        )
+        overall = 0.5 * os_score + 0.3 * port_jaccard + 0.2 * service_match_rate
+
+        return PeerStore.FingerprintComparison(
+            os_match=os_match,
+            port_jaccard=port_jaccard,
+            service_type_changes=service_type_changes,
             events=events,
+            overall_score=overall,
         )
 
     @staticmethod
-    def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    def _jaccard_similarity(a: set, b: set) -> float:
+        union = a | b
+        return len(a & b) / len(union) if union else 1.0
 
     # --------------------
     # Normalization helpers

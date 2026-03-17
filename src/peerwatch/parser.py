@@ -162,6 +162,7 @@ class NmapParser:
             return
 
         services, open_ports = self._find_ports(ports_list)
+
         self.normalised_data.update({"open_ports": open_ports, "services": services})
 
     def _find_ports(self, ports: dict | list) -> PortsInfo:
@@ -178,6 +179,10 @@ class NmapParser:
             services[portid] = service
             if port_open:
                 open_ports.append(portid)
+
+        # Sort so embeddings can be as similar as possible
+        open_ports.sort()
+        dict(sorted(services.items()))
 
         return self.PortsInfo(services, open_ports)
 
