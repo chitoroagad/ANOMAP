@@ -4,16 +4,19 @@ import glob
 import json
 import logging
 import os
+import sys
 from collections import defaultdict
 from pathlib import Path
 from pprint import pprint
 from typing import List, TextIO
 
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
 import xmltodict
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from peerwatch import Comparator, NmapParser, PeerStore
+from peerwatch import NmapParser, PeerStore
 from peerwatch.agent import SuspiciousAgent
 
 UNIMPORTANT_NMAP_FIELDS = [
@@ -54,8 +57,9 @@ for file_path in prompt_dir.iterdir():
         SYSTEM_PROMPTS.append((file_path.name, f.read()))
 
 
+Path("logs").mkdir(exist_ok=True)
 logging.basicConfig(
-    filename="app.log",
+    filename="logs/app.log",
     filemode="w",
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -81,7 +85,7 @@ def say_hi_test():
             pprint(output)
             print()
 
-    with open("./data/say_hi.json", "w") as f:
+    with open("./data/processed/say_hi.json", "w") as f:
         json.dump(output_dict, f, indent=2)
 
 
@@ -98,7 +102,7 @@ def jsonify(f: TextIO):
                 item.pop(field, None)
 
         json_data = json.dumps(dict_data, indent=2)
-        new_file_path = os.path.join("data", parse_filename(f.name)) + ".json"
+        new_file_path = os.path.join("data/processed", parse_filename(f.name)) + ".json"
         with open(new_file_path, "w") as j:
             j.write(json_data)
     except Exception as e:
@@ -112,11 +116,11 @@ def parse_filename(name: str) -> str:
 
 
 if __name__ == "__main__":
-    # files = glob.glob("../home_nmap_logs/*.xml")
+    # files = glob.glob("./data/raw/*.xml")
     # for file in files:
     #     with open(file) as f:
     #         jsonify(f)
-    files = glob.glob("./data/*.json")
+    files = glob.glob("./data/processed/*.json")
     peer_store = PeerStore()
     for file in files:
         with open(file) as f:

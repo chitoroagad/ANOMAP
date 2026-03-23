@@ -43,13 +43,12 @@ ollama pull phi4-mini
 
 ## Preparing scan data
 
-Convert nmap XML output to the JSON format expected by `PeerStore` using the `jsonify()` helper in `main.py`, then place the files in `src/data/`:
+Convert nmap XML output to the JSON format expected by `PeerStore` using the `jsonify()` helper in `main.py`, then place the files in `data/processed/`:
 
 ```sh
-# from src/
 python -c "
 import main
-with open('../home_nmap_logs/your_scan.xml') as f:
+with open('data/raw/your_scan.xml') as f:
     main.jsonify(f)
 "
 ```
@@ -63,16 +62,15 @@ nmap -sV -O --osscan-guess -oX scan.xml 192.168.1.0/24
 ## Run
 
 ```sh
-cd src/
 python main.py
 ```
 
 This will:
-1. Load all JSON files from `src/data/`
+1. Load all JSON files from `data/processed/`
 2. Build the `PeerStore` baseline from the first scan of each device
 3. Detect anomalies across subsequent scans
 4. Investigate any peer with `suspicion_score ≥ 3.0` using the LLM agent
-5. Write investigation reports to `src/reports/`
+5. Write investigation reports to `reports/`
 
 ## Report format
 
@@ -114,18 +112,20 @@ Oscillating service names (e.g. nmap alternating between two valid fingerprints 
 ## Project structure
 
 ```
+main.py                     entry point
 src/
-  main.py                   entry point
   peerwatch/
     parser.py               normalises nmap XML host data → NormalisedData
     peer_store.py           device identity store + fingerprint comparison
     agent.py                LLM investigation agent
-    comparator.py           temporal drift analysis (wip)
-    embedder.py             text embeddings (legacy, unused in main pipeline)
     util.py                 shared helpers
-  data/                     nmap JSON scan files (not committed)
-  prompts/                  LLM system prompts
-  reports/                  investigation output (not committed)
+data/
+  raw/                      nmap XML scans (not committed)
+  processed/                nmap JSON scans (not committed)
+prompts/                    LLM system prompts
+reports/                    investigation output (not committed)
+logs/                       app.log (not committed)
 tests/
+scripts/
 writeup/                    thesis writeup (Typst)
 ```

@@ -72,7 +72,9 @@ class NmapParser:
             logging.warning(f"No 'osmatch' key in {os_data}")
             return
 
-        osmatches = all_osmatches if isinstance(all_osmatches, list) else [all_osmatches]
+        osmatches = (
+            all_osmatches if isinstance(all_osmatches, list) else [all_osmatches]
+        )
 
         # Primary fields from the top-ranked osmatch (first entry, highest accuracy)
         top_osmatch = osmatches[0]

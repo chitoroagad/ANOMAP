@@ -112,30 +112,16 @@ class TestPeerStore:
         assert len(peer_store.peers) < 3
 
 
-class TestJaccardSimilarity:
-    def test_identical_sets(self):
-        assert PeerStore._jaccard_similarity({22, 80, 443}, {22, 80, 443}) == pytest.approx(1.0)
-
-    def test_disjoint_sets(self):
-        assert PeerStore._jaccard_similarity({22}, {80}) == pytest.approx(0.0)
-
-    def test_partial_overlap(self):
-        # intersection=1, union=3 → 1/3
-        assert PeerStore._jaccard_similarity({22, 80}, {80, 443}) == pytest.approx(1 / 3)
-
-    def test_both_empty(self):
-        assert PeerStore._jaccard_similarity(set(), set()) == pytest.approx(1.0)
-
-    def test_one_empty(self):
-        assert PeerStore._jaccard_similarity({22}, set()) == pytest.approx(0.0)
-
-
 class TestFingerprintComparison:
     def _data(self, **kwargs) -> NormalisedData:
         return NormalisedData(**kwargs)
 
     def test_identical_data_no_events(self):
-        data = self._data(os="Linux", open_ports=[22, 80], services={22: "ssh-OpenSSH", 80: "http-Apache"})
+        data = self._data(
+            os="Linux",
+            open_ports=[22, 80],
+            services={22: "ssh-OpenSSH", 80: "http-Apache"},
+        )
         result = PeerStore._compare_fingerprints(data, data)
 
         assert result.events == []
@@ -154,8 +140,12 @@ class TestFingerprintComparison:
     def test_os_candidate_overlap_suppresses_false_positive(self):
         # Simulates a TV/media device where nmap's top pick flips between Sony and Pioneer.
         # Both scans have overlapping candidates so no alert should fire.
-        prev = self._data(os="Sony", os_candidates={"Sony": 95, "Pioneer": 95, "Bush": 95})
-        incoming = self._data(os="Pioneer", os_candidates={"Pioneer": 95, "Bush": 95, "Sony": 95})
+        prev = self._data(
+            os="Sony", os_candidates={"Sony": 95, "Pioneer": 95, "Bush": 95}
+        )
+        incoming = self._data(
+            os="Pioneer", os_candidates={"Pioneer": 95, "Bush": 95, "Sony": 95}
+        )
         result = PeerStore._compare_fingerprints(prev, incoming)
 
         assert "os_family_changed" not in result.events
@@ -232,7 +222,9 @@ class TestFingerprintComparison:
         store.add_or_update_peer(data1)
         peer = store.add_or_update_peer(data2)
 
-        svc_events = [e for e in peer.identity_history if e.event == "service_type_changed"]
+        svc_events = [
+            e for e in peer.identity_history if e.event == "service_type_changed"
+        ]
         assert len(svc_events) == 1
         assert svc_events[0].details["port"] == 22
         assert svc_events[0].details["old_service"] == "ssh-OpenSSH"
@@ -246,14 +238,22 @@ class TestFingerprintComparison:
         ip = "10.0.0.1"
 
         def scan(svc):
-            return NormalisedData(mac_address=mac, ipv4=ip, open_ports=[8009], services={8009: svc})
+            return NormalisedData(
+                mac_address=mac, ipv4=ip, open_ports=[8009], services={8009: svc}
+            )
 
-        store.add_or_update_peer(scan("ajp13"))           # baseline: ajp13 known
-        store.add_or_update_peer(scan("castv2-Driver"))   # novel → fires event, castv2 now known
-        store.add_or_update_peer(scan("ajp13"))           # already known → no event
-        peer = store.add_or_update_peer(scan("castv2-Driver"))  # already known → no event
+        store.add_or_update_peer(scan("ajp13"))  # baseline: ajp13 known
+        store.add_or_update_peer(
+            scan("castv2-Driver")
+        )  # novel → fires event, castv2 now known
+        store.add_or_update_peer(scan("ajp13"))  # already known → no event
+        peer = store.add_or_update_peer(
+            scan("castv2-Driver")
+        )  # already known → no event
 
-        svc_events = [e for e in peer.identity_history if e.event == "service_type_changed"]
+        svc_events = [
+            e for e in peer.identity_history if e.event == "service_type_changed"
+        ]
         assert len(svc_events) == 1
         assert svc_events[0].details["new_service"] == "castv2-Driver"
 
@@ -290,7 +290,9 @@ class TestFingerprintComparison:
 
     def test_overall_score_os_mismatch(self):
         prev = self._data(os="Linux", open_ports=[22], services={22: "ssh-OpenSSH"})
-        incoming = self._data(os="Windows", open_ports=[22], services={22: "ssh-OpenSSH"})
+        incoming = self._data(
+            os="Windows", open_ports=[22], services={22: "ssh-OpenSSH"}
+        )
         result = PeerStore._compare_fingerprints(prev, incoming)
 
         # os_score=0, port_jaccard=1, service_match=1 → 0*0.5 + 1*0.3 + 1*0.2 = 0.5

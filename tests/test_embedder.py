@@ -31,7 +31,9 @@ class TestEmbedder:
             },
         )
 
-    def test_embed_returns_peer_embeddings(self, mock_embeddings_model, sample_normalised_data):
+    def test_embed_returns_peer_embeddings(
+        self, mock_embeddings_model, sample_normalised_data
+    ):
         embedder = Embedder("test-model")
         result = embedder.embed(sample_normalised_data)
 
@@ -41,7 +43,9 @@ class TestEmbedder:
         assert result.services == [0.1] * 384
         assert mock_embeddings_model.embed_query.call_count == 3
 
-    def test_embed_formats_os_correctly(self, mock_embeddings_model, sample_normalised_data):
+    def test_embed_formats_os_correctly(
+        self, mock_embeddings_model, sample_normalised_data
+    ):
         embedder = Embedder("test-model")
         embedder.embed(sample_normalised_data)
 
@@ -53,7 +57,9 @@ class TestEmbedder:
         assert "Ubuntu 20.04" in os_input
         assert "Dell" in os_input
 
-    def test_embed_formats_ports_correctly(self, mock_embeddings_model, sample_normalised_data):
+    def test_embed_formats_ports_correctly(
+        self, mock_embeddings_model, sample_normalised_data
+    ):
         embedder = Embedder("test-model")
         embedder.embed(sample_normalised_data)
 
@@ -64,7 +70,9 @@ class TestEmbedder:
         assert "80" in ports_input
         assert "443" in ports_input
 
-    def test_embed_formats_services_correctly(self, mock_embeddings_model, sample_normalised_data):
+    def test_embed_formats_services_correctly(
+        self, mock_embeddings_model, sample_normalised_data
+    ):
         embedder = Embedder("test-model")
         embedder.embed(sample_normalised_data)
 

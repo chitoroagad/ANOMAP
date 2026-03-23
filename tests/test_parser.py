@@ -166,13 +166,21 @@ class TestNmapParser:
                     {
                         "@name": "OpenWrt 21.02",
                         "@accuracy": "96",
-                        "osclass": {"@vendor": "Linux", "@osfamily": "Linux", "@osgen": "5.X"},
+                        "osclass": {
+                            "@vendor": "Linux",
+                            "@osfamily": "Linux",
+                            "@osgen": "5.X",
+                        },
                     },
                     {
                         "@name": "Android 10",
                         "@accuracy": "93",
                         "osclass": [
-                            {"@vendor": "Google", "@osfamily": "Android", "@osgen": "10.X"},
+                            {
+                                "@vendor": "Google",
+                                "@osfamily": "Android",
+                                "@osgen": "10.X",
+                            },
                             {"@vendor": "Linux", "@osfamily": "Linux", "@osgen": "4.X"},
                         ],
                     },
@@ -185,9 +193,9 @@ class TestNmapParser:
 
         assert "Linux" in result.os_candidates
         assert "Google" in result.os_candidates
-        assert result.os_candidates["Linux"] == 96   # max accuracy across both matches
+        assert result.os_candidates["Linux"] == 96  # max accuracy across both matches
         assert result.os_candidates["Google"] == 93
-        assert result.os == "Linux"                  # top pick unchanged
+        assert result.os == "Linux"  # top pick unchanged
 
     def test_parse_os_candidates_best_accuracy_kept(self):
         # Linux appears in two matches at different accuracies — keep the higher one
