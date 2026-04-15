@@ -1,133 +1,68 @@
-import json
-import logging
-import os
+from collections import defaultdict
 from datetime import datetime
-from os import PathLike
-from pathlib import Path
-from typing import Iterator
 
-from langchain_community.utils.math import cosine_similarity
 from pydantic import BaseModel
-from sortedcontainers import SortedDict
 
-from peerwatch.embedder import Embedder, PeerEmbeddings
-from peerwatch.parser import NmapParser, NormalisedData
+from peerwatch.peer_store import Peer, PeerStore
 
 
 class Comparator:
-    class Similarities(BaseModel):
-        os: float
-        ports: float
-        services: float
+    """Temporal drift analyser over a populated PeerStore.
 
-    class HostFingerprint:
-        def __init__(
-            self,
-            mac_address: str | None,
-            ipv4_address: str | None,
-            ipv6_address: str | None,
-        ):
-            self.mac_address = mac_address
-            self.ipv4_address = ipv4_address
-            self.ipv6_address = ipv6_address
+    Summarises per-peer identity events recorded during scan ingestion,
+    providing a human-readable view of which devices have changed and how.
+    """
 
-    def __init__(self, embedder: Embedder, data_path: str | PathLike):
-        self.embedder = embedder
-        self.data_path = data_path
-        self.peer_store: dict[str, PeerEmbeddings] = {}
-        self.time_to_hosts = self._load_data()
-        self._set_time_to_embeddings()
-        self._process_embeddings()
+    class PeerDriftSummary(BaseModel):
+        mac_address: str | None
+        ips: list[str]
+        scan_count: int
+        suspicion_score: float
+        event_counts: dict[str, int]
+        first_seen: datetime | None
+        last_seen: datetime | None
 
-    def _load_data(self) -> dict[datetime, list[NormalisedData]]:
-        data_iter = Path(self.data_path).glob("*.json")
-        time_to_file = self._parse_datetime(data_iter)
-        time_to_hosts = SortedDict()
-        for time, file in time_to_file.items():
-            with open(file) as f:
-                hosts = json.load(f)
-                time_to_hosts[time] = hosts
-        time_to_hosts = {
-            time: self._normalise(host) for time, host in time_to_hosts.items()
-        }
-        return time_to_hosts
+    def __init__(self, peer_store: PeerStore):
+        self.peer_store = peer_store
 
-    def _set_time_to_embeddings(self):
-        time_to_embeddings_data: dict[
-            datetime, list[tuple[NormalisedData, PeerEmbeddings | None]] | None
-        ] = {time: None for time in self.time_to_hosts.keys()}
-        for time, hosts in self.time_to_hosts.items():
-            embeddings = []
-            for host in hosts:
-                embedded = self.embedder.embed(host)
-                embeddings.append((host, embedded))
-            time_to_embeddings_data[time] = embeddings
+    def summarise(self) -> list["Comparator.PeerDriftSummary"]:
+        summaries = []
+        for peer in self.peer_store.peers.values():
+            event_counts: dict[str, int] = defaultdict(int)
+            timestamps: list[datetime] = []
+            for event in peer.identity_history:
+                event_counts[event.event] += 1
+                timestamps.append(event.timestamp)
 
-        self.time_to_embeddings_data = time_to_embeddings_data
-
-    def _process_embeddings(self):
-        for time, embeddings in self.time_to_embeddings_data.items():
-            if not embeddings:
-                logging.warning(f"No embeddings found for time: {time}, skipping")
-                continue
-
-            for raw_data, embedding in embeddings:
-                if embedding is None:
-                    print("Broke at no emebeddings")
-                    logging.warning(
-                        f"No embeddings found for host: {raw_data}\t skipping"
-                    )
-                    continue
-
-                mac = raw_data.mac_address
-                if mac == "unknown":
-                    logging.warning(
-                        f"Unknown mac address for host: {raw_data}\t skipping"
-                    )
-                    continue
-
-                if mac not in self.peer_store:
-                    # first instance of this mac address
-                    self.peer_store[mac] = embedding
-                    continue
-
-                os_similarity = cosine_similarity(
-                    [self.peer_store[mac].os], [embedding.os]
+            summaries.append(
+                self.PeerDriftSummary(
+                    mac_address=peer.mac_address,
+                    ips=sorted(peer.ips),
+                    scan_count=peer.scan_count,
+                    suspicion_score=round(peer.suspicion_score, 2),
+                    event_counts=dict(event_counts),
+                    first_seen=min(timestamps) if timestamps else None,
+                    last_seen=max(timestamps) if timestamps else None,
                 )
-                ports_similarity = cosine_similarity(
-                    [self.peer_store[mac].port_set], [embedding.port_set]
-                )
-                services_similarity = cosine_similarity(
-                    [self.peer_store[mac].services], [embedding.services]
-                )
-                print(raw_data.mac_address)
-                print(
-                    "OS:",
-                    os_similarity,
-                    "\nPORTS:",
-                    ports_similarity,
-                    "\nSERVICES:",
-                    services_similarity,
-                )
+            )
 
-    def _parse_datetime(self, paths: Iterator[Path]) -> dict[datetime, str]:
-        out = SortedDict()
-        for path in paths:
-            name = os.path.basename(path)
-            timestamp_str = name.replace("scan_", "").replace(".json", "")
-            dt = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
-            out[dt] = path
-        return out
+        return sorted(summaries, key=lambda s: s.suspicion_score, reverse=True)
 
-    @staticmethod
-    def _normalise(hosts):
-        out = []
-        for host in hosts:
-            parser = NmapParser(host)
-            out.append(parser.parse())
-        return out
-
-
-if __name__ == "__main__":
-    embedder = Embedder("all-minilm:22m")
-    c = Comparator(embedder, "./data/")
+    def print_report(self) -> None:
+        summaries = self.summarise()
+        width = 60
+        print(f"\n{'=' * width}")
+        print(f"Temporal Drift Report  ({len(summaries)} peers)")
+        print(f"{'=' * width}")
+        for s in summaries:
+            label = s.mac_address or "volatile/no-mac"
+            ips = ", ".join(s.ips) if s.ips else "no IP"
+            print(f"\n  {label}  [{ips}]")
+            print(f"  scans={s.scan_count}  suspicion={s.suspicion_score}")
+            notable = {k: v for k, v in s.event_counts.items() if k != "peer_created"}
+            if notable:
+                for event, count in sorted(notable.items()):
+                    print(f"    {event}: {count}x")
+            else:
+                print("    (no anomalies recorded)")
+        print()

@@ -1,13 +1,49 @@
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 
 UNKNOWN_KEY = "unknown"
+
+# --- Suspicion weights ---
+# Validated against 86 scans per device on a home network:
+# - Port Jaccard stays at 1.0 for stable devices; drops below 0.6 only for genuine
+#   profile changes or ephemeral iOS ports (handled by baseline warmup).
+# - OS candidates are stable for real devices; "unknown" gaps are guarded separately.
 PORT_JACCARD_THRESHOLD = 0.6
-SERVICE_CHANGE_SUSPICION = 1.0
+SERVICE_CHANGE_SUSPICION = 1.0       # protocol change on a shared port (e.g. ssh → http)
+PORT_PROTOCOL_MISMATCH_SUSPICION = 3.0  # well-known port running wrong protocol (backdoor signal)
+
+# --- Decay ---
+# Suspicion halves every 3.5 days of clean scans, reaching ~25% after one week
+# and near-zero (~6%) after two weeks. Keeps legitimate one-off anomalies
+# (e.g. an OS upgrade) from permanently flagging a device.
+SUSPICION_HALF_LIFE_DAYS = 3.5
+
+# --- Baseline warmup ---
+# First N scans build a fingerprint baseline; anomaly scoring starts after that.
+BASELINE_MIN_SCANS = 5
+
+# --- Volatile peer TTL ---
+# Peers with no confirmed MAC are evicted after this many hours of inactivity.
+VOLATILE_PEER_TTL_HOURS = 24
+
+# --- Port → expected service-type (first segment of nmap service string) ---
+# Conservative list of ports where a protocol mismatch is a strong backdoor signal.
+# Uses nmap's service-name conventions (split on "-", take first token).
+WELL_KNOWN_PORT_PROTOCOLS: dict[int, set[str]] = {
+    21: {"ftp"},
+    22: {"ssh"},
+    53: {"domain"},
+    80: {"http"},
+    443: {"https", "http", "ssl"},  # nmap may report "http" when TLS is transparent
+    3306: {"mysql"},
+    5432: {"postgresql"},
+    6379: {"redis"},
+    27017: {"mongod"},
+}
 
 from peerwatch import util
 from peerwatch.parser import NormalisedData
@@ -38,13 +74,18 @@ class Peer(BaseModel):
     mac_address: str | None = None
     ips: set[str] = Field(default_factory=set)
 
-    is_volatile: bool = True  # False if MAC is set
+    is_volatile: bool = True  # False if MAC is confirmed
     suspicion_score: float = 0.0  # increases with conflicting observations
+
+    scan_count: int = 0
+    last_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     metadata: NormalisedData
     # All service types ever seen per port — used to suppress oscillation false positives.
     # e.g. {8009: {"ajp13", "castv2"}} means both have been observed and neither is novel.
     known_services: dict[int, set[str]] = Field(default_factory=dict)
+    # Ports where a protocol mismatch has already been recorded — prevents repeated flagging.
+    flagged_port_mismatches: set[int] = Field(default_factory=set)
     metadata_history: list[NormalisedData] = Field(default_factory=list)
     identity_history: list[IdentityEvent] = Field(default_factory=list)
 
@@ -128,6 +169,7 @@ class PeerStore:
 
             if len(candidate_ids) == 1:
                 peer = self.peers[next(iter(candidate_ids))]
+                self._apply_suspicion_decay(peer)
                 suspicion = self._check_incoming_fingerprint(peer, data)
                 self._update_peer(peer, mac, ips, data)
                 peer.suspicion_score += suspicion
@@ -144,6 +186,30 @@ class PeerStore:
             self.mac_to_id = {}
             self.ip_to_id = {}
 
+    def evict_stale_volatile_peers(self, now: datetime | None = None) -> list[str]:
+        """Remove volatile (MAC-less) peers not seen within VOLATILE_PEER_TTL_HOURS.
+
+        Returns the list of evicted internal IDs.
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(hours=VOLATILE_PEER_TTL_HOURS)).replace(tzinfo=timezone.utc)
+        evicted = []
+        with self._lock:
+            for pid, peer in list(self.peers.items()):
+                if peer.mac_address:
+                    continue  # not volatile
+                last = peer.last_seen_at
+                if last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                if last < cutoff:
+                    for ip in peer.ips:
+                        self.ip_to_id.pop(ip, None)
+                    del self.peers[pid]
+                    evicted.append(pid)
+                    logging.info(f"Evicted stale volatile peer {pid}")
+        return evicted
+
     # --------------------
     # Internal helpers
     # --------------------
@@ -151,6 +217,10 @@ class PeerStore:
     def _check_incoming_fingerprint(
         self, prev: Peer, incoming_data: NormalisedData
     ) -> float:
+        # During the warmup period we record events but do not score them so that
+        # noisy early scans don't permanently taint the suspicion score.
+        in_warmup = prev.scan_count < BASELINE_MIN_SCANS
+
         comparison = self._compare_fingerprints(prev.metadata, incoming_data)
         suspicion = 0.0
 
@@ -175,16 +245,33 @@ class PeerStore:
                 old_service=old_svc,
                 new_service=new_svc,
             )
-            suspicion += SERVICE_CHANGE_SUSPICION
+            if not in_warmup:
+                suspicion += SERVICE_CHANGE_SUSPICION
             if new_type:
                 prev.known_services.setdefault(port, set()).add(new_type)
 
-        if "full_identity_shift" in comparison.events:
-            suspicion += 2.0
-        if "os_family_changed" in comparison.events:
-            suspicion += 2.0
-        if "port_profile_changed" in comparison.events:
-            suspicion += 0.5
+        if not in_warmup:
+            if "full_identity_shift" in comparison.events:
+                suspicion += 2.0
+            if "os_family_changed" in comparison.events:
+                suspicion += 2.0
+            if "port_profile_changed" in comparison.events:
+                suspicion += 0.5
+
+            # Port–protocol mismatch: well-known port running the wrong service type.
+            # Strong backdoor signal — only score after baseline is established.
+            for port, expected, actual in self._check_port_protocol_mismatches(incoming_data):
+                if port in prev.flagged_port_mismatches:
+                    continue  # already flagged; don't accumulate on every scan
+                prev.record_event(
+                    "port_protocol_mismatch",
+                    port=port,
+                    expected=sorted(expected),
+                    actual=actual,
+                )
+                suspicion += PORT_PROTOCOL_MISMATCH_SUSPICION
+                prev.flagged_port_mismatches.add(port)
+
         return suspicion
 
     def _create_peer(
@@ -199,12 +286,20 @@ class PeerStore:
             if svc_type:
                 known_services[port] = {svc_type}
 
+        now = datetime.now(timezone.utc)
         peer = Peer.model_construct(
+            internal_id=str(uuid.uuid4()),
             mac_address=mac,
             ips=set(ips),
+            is_volatile=mac is None,
+            suspicion_score=0.0,
+            scan_count=1,
+            last_seen_at=now,
             metadata=data,
             known_services=known_services,
-            is_volatile=True if mac else False,
+            flagged_port_mismatches=set(),
+            metadata_history=[],
+            identity_history=[],
         )
 
         peer.record_event("peer_created", mac=mac, ips=list(ips))
@@ -226,6 +321,8 @@ class PeerStore:
     ):
         peer.metadata_history.append(peer.metadata)
         peer.metadata = data
+        peer.scan_count += 1
+        peer.last_seen_at = datetime.now(timezone.utc)
 
         if mac and peer.mac_address and mac != peer.mac_address:
             peer.suspicion_score += 0.5
@@ -293,6 +390,45 @@ class PeerStore:
         survivor.record_event("peer_merged", ghost_id=ghost.internal_id)
 
         del self.peers[ghost.internal_id]
+
+    @staticmethod
+    def _apply_suspicion_decay(peer: Peer) -> None:
+        """Exponential decay based on time since last scan.
+
+        Suspicion halves every SUSPICION_HALF_LIFE_DAYS days of clean activity,
+        so legitimate one-off anomalies (e.g. an OS upgrade) don't keep a device
+        permanently flagged.
+        """
+        if peer.suspicion_score <= 0:
+            return
+        now = datetime.now(timezone.utc)
+        last = peer.last_seen_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed_days = (now - last).total_seconds() / 86400
+        if elapsed_days > 0:
+            peer.suspicion_score *= 0.5 ** (elapsed_days / SUSPICION_HALF_LIFE_DAYS)
+
+    @staticmethod
+    def _check_port_protocol_mismatches(
+        data: NormalisedData,
+    ) -> list[tuple[int, set[str], str]]:
+        """Return (port, expected_protocols, actual_service) for well-known ports
+        whose detected service type doesn't match the expected protocol.
+
+        Skips ports where nmap couldn't identify the service (empty or 'tcpwrapped').
+        """
+        mismatches = []
+        for port, service in data.services.items():
+            expected = WELL_KNOWN_PORT_PROTOCOLS.get(port)
+            if not expected:
+                continue
+            svc_type = service.split("-")[0].lower() if service else ""
+            if not svc_type or svc_type == "tcpwrapped":
+                continue
+            if svc_type not in expected:
+                mismatches.append((port, expected, service))
+        return mismatches
 
     @staticmethod
     def _compare_fingerprints(

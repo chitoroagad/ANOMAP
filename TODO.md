@@ -14,29 +14,29 @@
 
 ## Phase 1 — Strengthen Core nmap Pipeline
 
-- [ ] **Tune suspicion parameters**
-  - Current values (OS +2.0, port drift +0.5, service change +1.0) are reasonable but untested
-  - Validate against real scan data; adjust Jaccard threshold (0.6) based on observed variance
+- [x] **Tune suspicion parameters**
+  - Validated against 86 scans/device: port Jaccard stays 1.0 for stable devices; Jaccard 0.6 threshold is correct
+  - Added comments to constants explaining the empirical basis
 
-- [ ] **Add suspicion decay**
-  - Suspicion only accumulates, never decays — a legitimate OS upgrade makes a device permanently suspicious
-  - Implement time-based decay (e.g. suspicion halves after N days of clean scans)
+- [x] **Add suspicion decay**
+  - Exponential decay: suspicion halves every 3.5 days (`SUSPICION_HALF_LIFE_DAYS`), ~6% remaining after 2 weeks
+  - Applied per-scan based on elapsed time since `last_seen_at`
 
-- [ ] **Baseline warmup period**
-  - First N scans of a new peer should build a baseline, not trigger anomaly detection
-  - Only start scoring after baseline is stable (low variance across k scans)
+- [x] **Baseline warmup period**
+  - First 5 scans (`BASELINE_MIN_SCANS`) build baseline; events are recorded but not scored
+  - Eliminates false positives from noisy iOS/randomized-MAC devices with ephemeral ports
 
-- [ ] **Handle volatile/MAC-less peers**
-  - Peers without a MAC live in the volatile pool forever
-  - Add TTL / eviction policy for volatile peers with no recent activity
+- [x] **Handle volatile/MAC-less peers**
+  - `evict_stale_volatile_peers()` removes MAC-less peers inactive for 24 h (`VOLATILE_PEER_TTL_HOURS`)
+  - Also fixed `is_volatile` bug: was `True if mac else False` (backwards), now `mac is None`
 
-- [ ] **Wire up comparator.py to the main pipeline**
-  - Currently unused; temporal drift analysis is valuable signal
-  - Integrate scan-over-scan delta reporting into main.py
+- [x] **Wire up comparator.py to the main pipeline**
+  - Refactored `Comparator` to structural temporal drift analyser over a populated `PeerStore`
+  - `print_report()` called in `main.py` before agent investigation
 
-- [ ] **Check if service on a port matches expected protocol**
-  - Is the service on port 22 actually SSH? Banner grabbing / protocol verification
-  - Mismatches are strong indicators of backdoors; complements the current service type check
+- [x] **Check if service on a port matches expected protocol**
+  - `_check_port_protocol_mismatches()` checks well-known ports (22→ssh, 80→http, 5432→postgresql, etc.)
+  - Fires once per port via `flagged_port_mismatches`; adds +3.0 suspicion (`PORT_PROTOCOL_MISMATCH_SUSPICION`)
 
 ---
 

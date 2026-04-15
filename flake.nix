@@ -19,7 +19,7 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
-      pythonPackages = pkgs.python314Packages;
+      pythonPackages = pkgs.python3Packages;
     in {
       devShells.writeup = pkgs.mkShell {
         name = "typst-shell";
@@ -45,7 +45,7 @@
 
           # This executes some shell code to initialize a venv in $venvDir before
           # dropping into the shell
-          venvShellHook
+          # venvShellHook
 
           # Those are dependencies that we would like to use from nixpkgs, which will
           # add them to PYTHONPATH and thus make them accessible from within the venv.
@@ -62,11 +62,11 @@
         ];
 
         # Run this command, only after creating the virtual environment
-        postVenvCreation = ''
-          unset SOURCE_DATE_EPOCH
-          pip install --upgrade pip
-          pip install -r requirements.txt
-        '';
+        # postVenvCreation = ''
+        #   unset SOURCE_DATE_EPOCH
+        #   pip install --upgrade pip
+        #   pip install -r requirements.txt
+        # '';
 
         # Now we can execute any commands within the virtual environment.
         # This is optional and can be left out to run pip manually.

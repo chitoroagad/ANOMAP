@@ -1,6 +1,0 @@
-python-platform = "linux"
-
-project-includes = [
-    "**/*.py*",
-    "**/*.ipynb",
-]

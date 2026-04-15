@@ -18,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from peerwatch import NmapParser, PeerStore
 from peerwatch.agent import SuspiciousAgent
+from peerwatch.comparator import Comparator
 
 UNIMPORTANT_NMAP_FIELDS = [
     "@starttime",
@@ -129,6 +130,12 @@ if __name__ == "__main__":
                 parser = NmapParser(host)
                 normalised_data = parser.parse()
                 peer_store.add_or_update_peer(normalised_data)
+
+    Comparator(peer_store).print_report()
+
+    evicted = peer_store.evict_stale_volatile_peers()
+    if evicted:
+        print(f"Evicted {len(evicted)} stale volatile peer(s).")
 
     agent = SuspiciousAgent(
         peer_store=peer_store,
