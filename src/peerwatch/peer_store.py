@@ -362,7 +362,7 @@ class PeerStore:
 
         for peer in peers:
             if peer.internal_id == survivor.internal_id:
-                pass
+                continue
             self._merge_peers(survivor, peer)
 
         print(f"Resolving conflict between {peers}")
