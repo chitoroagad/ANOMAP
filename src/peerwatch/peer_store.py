@@ -5,55 +5,11 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 
+from peerwatch import util
+from peerwatch.config import PeerWatchConfig
+from peerwatch.parser import NormalisedData
+
 UNKNOWN_KEY = "unknown"
-
-# --- Suspicion weights (Phase 1 — nmap-based) ---
-# - Port Jaccard stays at 1.0 for stable devices; drops below 0.6 only for genuine
-#   profile changes or ephemeral iOS ports (handled by baseline warmup).
-# - OS candidates are stable for real devices; "unknown" gaps are guarded separately.
-PORT_JACCARD_THRESHOLD = 0.6
-SERVICE_CHANGE_SUSPICION = 1.0  # protocol change on a shared port (e.g. ssh → http)
-PORT_PROTOCOL_MISMATCH_SUSPICION = (
-    3.0  # well-known port running wrong protocol (backdoor signal)
-)
-
-# --- Suspicion weights (Phase 2 — passive capture) ---
-# TTL deviation: a shift ≥ TTL_DEVIATION_THRESHOLD is too large to be routing change;
-# the most likely cause is a different physical device.
-TTL_BASELINE_MIN_SAMPLES = 5  # observations required before expected_ttl is locked in
-TTL_DEVIATION_THRESHOLD = 15  # absolute deviation that triggers suspicion
-TTL_DEVIATION_SUSPICION = 2.0  # score added for a confirmed TTL anomaly
-
-# ARP spoofing: a reply claiming a known MAC→IP binding is different is a direct
-# MITM precursor and earns the highest single-event score.
-ARP_SPOOF_SUSPICION = 3.0
-
-# TCP passive fingerprint: a SYN packet whose implied OS contradicts the nmap OS
-# suggests the device's TCP/IP stack was patched or the device was replaced.
-TCP_FINGERPRINT_MISMATCH_SUSPICION = 2.0
-
-# IP ID anomaly: a sudden jump in the IP ID counter that breaks a sequential
-# pattern indicates a different sender is generating packets for this source IP.
-IP_ID_MIN_SAMPLES = 8  # collect this many before enabling anomaly detection
-IP_ID_JUMP_THRESHOLD = 5000  # counter jump this large is flagged
-
-IP_ID_ANOMALY_SUSPICION = 1.0
-
-# Route change: scored separately by PeerStore.ingest_route_change() callers
-# who pass RouteChangeEvent objects from RouteTracker.
-ROUTE_HOP_CHANGE_SUSPICION = 1.0
-ROUTE_ASN_CHANGE_SUSPICION = 1.5
-
-# Suspicion halves every 3.5 days of clean scans, reaching ~25% after one week
-# and near-zero (~6%) after two weeks. Keeps legitimate one-off anomalies
-# (e.g. an OS upgrade) from permanently flagging a device.
-SUSPICION_HALF_LIFE_DAYS = 3.5
-
-# First N scans build a fingerprint baseline; anomaly scoring starts after that.
-BASELINE_MIN_SCANS = 5
-
-# Peers with no confirmed MAC are evicted after this many hours of inactivity.
-VOLATILE_PEER_TTL_HOURS = 24
 
 # --- Port -> expected service-type (first segment of nmap service string) ---
 # Conservative list of ports where a protocol mismatch is a strong backdoor signal.
@@ -69,9 +25,6 @@ WELL_KNOWN_PORT_PROTOCOLS: dict[int, set[str]] = {
     6379: {"redis"},
     27017: {"mongod"},
 }
-
-from peerwatch import util
-from peerwatch.parser import NormalisedData
 
 
 def _os_candidate_families(data: "NormalisedData") -> set[str]:  # noqa: F821
@@ -174,10 +127,11 @@ class PeerStore:
 
     _lock: threading.Lock = threading.Lock()
 
-    def __init__(self):
+    def __init__(self, config: PeerWatchConfig | None = None):
         self.peers = {}
         self.mac_to_id = {}
         self.ip_to_id = {}
+        self._cfg = config if config is not None else PeerWatchConfig()
 
     # --------------------
     # Public API
@@ -236,7 +190,7 @@ class PeerStore:
         """
         if now is None:
             now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(hours=VOLATILE_PEER_TTL_HOURS)).replace(
+        cutoff = (now - timedelta(hours=self._cfg.volatile_peer_ttl_hours)).replace(
             tzinfo=timezone.utc
         )
         evicted = []
@@ -275,7 +229,7 @@ class PeerStore:
             peer.ttl_samples.append(ttl)
 
             if peer.expected_ttl is None:
-                if len(peer.ttl_samples) >= TTL_BASELINE_MIN_SAMPLES:
+                if len(peer.ttl_samples) >= self._cfg.ttl_baseline_min_samples:
                     # Use the median sample to resist outliers, then snap to an OS default.
                     import statistics as _stats
 
@@ -293,14 +247,14 @@ class PeerStore:
                     )
             else:
                 deviation = abs(ttl - peer.expected_ttl)
-                if deviation > TTL_DEVIATION_THRESHOLD:
+                if deviation > self._cfg.ttl_deviation_threshold:
                     peer.record_event(
                         "ttl_deviation",
                         observed_ttl=ttl,
                         expected_ttl=peer.expected_ttl,
                         deviation=deviation,
                     )
-                    peer.suspicion_score += TTL_DEVIATION_SUSPICION
+                    peer.suspicion_score += self._cfg.ttl_deviation_suspicion
                     logging.warning(
                         "TTL anomaly for peer %s: observed=%d expected=%d (Δ%d)",
                         peer.internal_id,
@@ -338,7 +292,7 @@ class PeerStore:
                     known_mac=peer.mac_address,
                     claimed_mac=normalised_mac,
                 )
-                peer.suspicion_score += ARP_SPOOF_SUSPICION
+                peer.suspicion_score += self._cfg.arp_spoof_suspicion
                 logging.warning(
                     "ARP spoofing: peer %s (IP %s) — known MAC %s, ARP claims %s",
                     peer.internal_id,
@@ -403,7 +357,7 @@ class PeerStore:
                         tcp_options=tcp_options,
                         mss=mss,
                     )
-                    peer.suspicion_score += TCP_FINGERPRINT_MISMATCH_SUSPICION
+                    peer.suspicion_score += self._cfg.tcp_fingerprint_mismatch_suspicion
                     logging.warning(
                         "TCP fingerprint mismatch for peer %s: TCP implies %s, nmap sees %s",
                         peer.internal_id,
@@ -431,29 +385,29 @@ class PeerStore:
         with self._lock:
             samples = peer.ip_id_samples
 
-            if len(samples) < IP_ID_MIN_SAMPLES:
+            if len(samples) < self._cfg.ip_id_min_samples:
                 samples.append(ip_id)
-                if len(samples) == IP_ID_MIN_SAMPLES:
+                if len(samples) == self._cfg.ip_id_min_samples:
                     peer.ip_id_sequential = _detect_sequential_ip_ids(samples)
                 return peer
 
             # Sliding window: replace oldest sample
             prev_ip_id = samples[-1]
             samples.append(ip_id)
-            if len(samples) > IP_ID_MIN_SAMPLES * 2:
+            if len(samples) > self._cfg.ip_id_min_samples * 2:
                 samples.pop(0)
 
             if peer.ip_id_sequential:
                 # 16-bit wrap-around: IP IDs are mod-65536
                 jump = (ip_id - prev_ip_id) % 65536
-                if jump > IP_ID_JUMP_THRESHOLD:
+                if jump > self._cfg.ip_id_jump_threshold:
                     peer.record_event(
                         "ip_id_anomaly",
                         prev_ip_id=prev_ip_id,
                         observed_ip_id=ip_id,
                         jump=jump,
                     )
-                    peer.suspicion_score += IP_ID_ANOMALY_SUSPICION
+                    peer.suspicion_score += self._cfg.ip_id_anomaly_suspicion
                     logging.warning(
                         "IP ID anomaly for peer %s: jump of %d (prev=%d, now=%d)",
                         peer.internal_id,
@@ -488,14 +442,14 @@ class PeerStore:
 
         score = 0.0
         if change_kind == RouteChangeKind.HOP_SEQUENCE_CHANGED:
-            score = ROUTE_HOP_CHANGE_SUSPICION
+            score = self._cfg.route_hop_change_suspicion
         elif change_kind == RouteChangeKind.NEW_ASN_IN_PATH:
-            score = ROUTE_ASN_CHANGE_SUSPICION
+            score = self._cfg.route_asn_change_suspicion
         elif change_kind in (
             RouteChangeKind.HOP_COUNT_CHANGED,
             RouteChangeKind.ASYMMETRIC_PATH,
         ):
-            score = ROUTE_HOP_CHANGE_SUSPICION
+            score = self._cfg.route_hop_change_suspicion
 
         with self._lock:
             peer.known_routes[destination] = new_hops
@@ -526,7 +480,7 @@ class PeerStore:
     ) -> float:
         # During the warmup period we record events but do not score them so that
         # noisy early scans don't permanently taint the suspicion score.
-        in_warmup = prev.scan_count < BASELINE_MIN_SCANS
+        in_warmup = prev.scan_count < self._cfg.baseline_min_scans
 
         comparison = self._compare_fingerprints(prev.metadata, incoming_data)
         suspicion = 0.0
@@ -553,7 +507,7 @@ class PeerStore:
                 new_service=new_svc,
             )
             if not in_warmup:
-                suspicion += SERVICE_CHANGE_SUSPICION
+                suspicion += self._cfg.service_change_suspicion
             if new_type:
                 prev.known_services.setdefault(port, set()).add(new_type)
 
@@ -578,7 +532,7 @@ class PeerStore:
                     expected=sorted(expected),
                     actual=actual,
                 )
-                suspicion += PORT_PROTOCOL_MISMATCH_SUSPICION
+                suspicion += self._cfg.port_protocol_mismatch_suspicion
                 prev.flagged_port_mismatches.add(port)
 
         return suspicion
@@ -706,11 +660,10 @@ class PeerStore:
 
         del self.peers[ghost.internal_id]
 
-    @staticmethod
-    def _apply_suspicion_decay(peer: Peer) -> None:
+    def _apply_suspicion_decay(self, peer: Peer) -> None:
         """Exponential decay based on time since last scan.
 
-        Suspicion halves every SUSPICION_HALF_LIFE_DAYS days of clean activity,
+        Suspicion halves every suspicion_half_life_days days of clean activity,
         so legitimate one-off anomalies (e.g. an OS upgrade) don't keep a device
         permanently flagged.
         """
@@ -722,10 +675,12 @@ class PeerStore:
             last = last.replace(tzinfo=timezone.utc)
         elapsed_days = (now - last).total_seconds() / 86400
         if elapsed_days > 0:
-            peer.suspicion_score *= 0.5 ** (elapsed_days / SUSPICION_HALF_LIFE_DAYS)
+            peer.suspicion_score *= 0.5 ** (
+                elapsed_days / self._cfg.suspicion_half_life_days
+            )
 
-    @staticmethod
     def _check_port_protocol_mismatches(
+        self,
         data: NormalisedData,
     ) -> list[tuple[int, set[str], str]]:
         """Return (port, expected_protocols, actual_service) for well-known ports
@@ -745,9 +700,8 @@ class PeerStore:
                 mismatches.append((port, expected, service))
         return mismatches
 
-    @staticmethod
     def _compare_fingerprints(
-        prev: NormalisedData, incoming: NormalisedData
+        self, prev: NormalisedData, incoming: NormalisedData
     ) -> "PeerStore.FingerprintComparison":
         events = []
 
@@ -769,7 +723,9 @@ class PeerStore:
         prev_ports = set(prev.open_ports)
         curr_ports = set(incoming.open_ports)
         port_jaccard = util._jaccard_similarity(prev_ports, curr_ports)
-        if (prev_ports | curr_ports) and port_jaccard < PORT_JACCARD_THRESHOLD:
+        if (
+            prev_ports | curr_ports
+        ) and port_jaccard < self._cfg.port_jaccard_threshold:
             events.append("port_profile_changed")
 
         # 3. Service type on shared ports

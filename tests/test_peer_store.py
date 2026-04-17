@@ -113,6 +113,8 @@ class TestPeerStore:
 
 
 class TestFingerprintComparison:
+    _ps = PeerStore()
+
     def _data(self, **kwargs) -> NormalisedData:
         return NormalisedData(**kwargs)
 
@@ -122,7 +124,7 @@ class TestFingerprintComparison:
             open_ports=[22, 80],
             services={22: "ssh-OpenSSH", 80: "http-Apache"},
         )
-        result = PeerStore._compare_fingerprints(data, data)
+        result = self._ps._compare_fingerprints(data, data)
 
         assert result.events == []
         assert result.os_match is True
@@ -132,7 +134,7 @@ class TestFingerprintComparison:
     def test_os_family_change_triggers_event(self):
         prev = self._data(os="Linux", open_ports=[22])
         incoming = self._data(os="Windows", open_ports=[22])
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "os_family_changed" in result.events
         assert result.os_match is False
@@ -146,7 +148,7 @@ class TestFingerprintComparison:
         incoming = self._data(
             os="Pioneer", os_candidates={"Pioneer": 95, "Bush": 95, "Sony": 95}
         )
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "os_family_changed" not in result.events
         assert result.os_match is True
@@ -155,7 +157,7 @@ class TestFingerprintComparison:
         # Linux device suddenly fingerprints as Windows with no shared families.
         prev = self._data(os="Linux", os_candidates={"Linux": 96})
         incoming = self._data(os="Windows", os_candidates={"Microsoft": 95})
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "os_family_changed" in result.events
         assert result.os_match is False
@@ -164,7 +166,7 @@ class TestFingerprintComparison:
         # Two candidates in prev, one shared with incoming — overlap is partial.
         prev = self._data(os="Linux", os_candidates={"Linux": 96, "Google": 93})
         incoming = self._data(os="Linux", os_candidates={"Linux": 96})
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert result.os_match is True
         # os_score = 1/2 = 0.5, ports Jaccard = 1.0 (both empty), service = 1.0
@@ -174,7 +176,7 @@ class TestFingerprintComparison:
     def test_os_unknown_does_not_trigger_event(self):
         prev = self._data(os="unknown", open_ports=[22])
         incoming = self._data(os="Linux", open_ports=[22])
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "os_family_changed" not in result.events
         assert result.os_match is True
@@ -182,7 +184,7 @@ class TestFingerprintComparison:
     def test_port_profile_changed_below_threshold(self):
         prev = self._data(open_ports=[22, 80, 443])
         incoming = self._data(open_ports=[8080, 8443, 9000])
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "port_profile_changed" in result.events
         assert result.port_jaccard == pytest.approx(0.0)
@@ -190,7 +192,7 @@ class TestFingerprintComparison:
     def test_port_profile_unchanged_above_threshold(self):
         prev = self._data(open_ports=[22, 80, 443])
         incoming = self._data(open_ports=[22, 80, 443, 8080])
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         # jaccard = 3/4 = 0.75 > threshold
         assert "port_profile_changed" not in result.events
@@ -199,7 +201,7 @@ class TestFingerprintComparison:
     def test_service_type_change_on_shared_port(self):
         prev = self._data(open_ports=[22], services={22: "ssh-OpenSSH"})
         incoming = self._data(open_ports=[22], services={22: "http-nginx"})
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "service_type_changed" in result.events
         assert 22 in result.service_type_changes
@@ -261,7 +263,7 @@ class TestFingerprintComparison:
         # Same protocol type (ssh), different product version — not suspicious
         prev = self._data(open_ports=[22], services={22: "ssh-OpenSSH 7.9"})
         incoming = self._data(open_ports=[22], services={22: "ssh-OpenSSH 8.4"})
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "service_type_changed" not in result.events
 
@@ -276,7 +278,7 @@ class TestFingerprintComparison:
             open_ports=[3389, 445],
             services={},
         )
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         assert "full_identity_shift" in result.events
         assert "os_family_changed" in result.events
@@ -284,7 +286,7 @@ class TestFingerprintComparison:
 
     def test_overall_score_all_match(self):
         data = self._data(os="Linux", open_ports=[22], services={22: "ssh-OpenSSH"})
-        result = PeerStore._compare_fingerprints(data, data)
+        result = self._ps._compare_fingerprints(data, data)
 
         assert result.overall_score == pytest.approx(1.0)
 
@@ -293,7 +295,7 @@ class TestFingerprintComparison:
         incoming = self._data(
             os="Windows", open_ports=[22], services={22: "ssh-OpenSSH"}
         )
-        result = PeerStore._compare_fingerprints(prev, incoming)
+        result = self._ps._compare_fingerprints(prev, incoming)
 
         # os_score=0, port_jaccard=1, service_match=1 → 0*0.5 + 1*0.3 + 1*0.2 = 0.5
         assert result.overall_score == pytest.approx(0.5)

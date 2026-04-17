@@ -17,6 +17,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from peerwatch import NmapParser
+from peerwatch.config import load_config
 from peerwatch.peer_store import PeerStore
 from peerwatch.agent import SuspiciousAgent
 from peerwatch.comparator import Comparator
@@ -122,8 +123,10 @@ if __name__ == "__main__":
     # for file in files:
     #     with open(file) as f:
     #         jsonify(f)
+    cfg = load_config("config.json")
+
     files = glob.glob("./data/processed/*.json")
-    peer_store = PeerStore()
+    peer_store = PeerStore(config=cfg)
     for file in files:
         with open(file) as f:
             data = json.load(f)
@@ -141,7 +144,7 @@ if __name__ == "__main__":
     agent = SuspiciousAgent(
         peer_store=peer_store,
         output_dir="./reports",
-        model="phi4-mini:latest",
-        threshold=3.0,
+        model=cfg.model,
+        threshold=cfg.suspicion_threshold,
     )
     agent.investigate_all()

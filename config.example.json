@@ -1,0 +1,28 @@
+{
+  "_comment": "Copy to config.json and adjust values. All fields are optional — omitted fields use defaults.",
+
+  "port_jaccard_threshold": 0.6,
+  "service_change_suspicion": 1.0,
+  "port_protocol_mismatch_suspicion": 3.0,
+
+  "ttl_baseline_min_samples": 5,
+  "ttl_deviation_threshold": 15,
+  "ttl_deviation_suspicion": 2.0,
+
+  "arp_spoof_suspicion": 3.0,
+  "tcp_fingerprint_mismatch_suspicion": 2.0,
+
+  "ip_id_min_samples": 8,
+  "ip_id_jump_threshold": 5000,
+  "ip_id_anomaly_suspicion": 1.0,
+
+  "route_hop_change_suspicion": 1.0,
+  "route_asn_change_suspicion": 1.5,
+
+  "suspicion_half_life_days": 3.5,
+  "baseline_min_scans": 5,
+  "volatile_peer_ttl_hours": 24,
+
+  "suspicion_threshold": 3.0,
+  "model": "phi4-mini:latest"
+}

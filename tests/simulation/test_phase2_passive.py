@@ -17,18 +17,21 @@ Scenario summary:
 
 import pytest
 
+from peerwatch.config import PeerWatchConfig
 from peerwatch.peer_store import (
-    ARP_SPOOF_SUSPICION,
-    IP_ID_ANOMALY_SUSPICION,
-    IP_ID_MIN_SAMPLES,
-    ROUTE_ASN_CHANGE_SUSPICION,
-    ROUTE_HOP_CHANGE_SUSPICION,
-    TCP_FINGERPRINT_MISMATCH_SUSPICION,
-    TTL_BASELINE_MIN_SAMPLES,
-    TTL_DEVIATION_SUSPICION,
     Peer,
     PeerStore,
 )
+
+_defaults = PeerWatchConfig()
+ARP_SPOOF_SUSPICION = _defaults.arp_spoof_suspicion
+IP_ID_ANOMALY_SUSPICION = _defaults.ip_id_anomaly_suspicion
+IP_ID_MIN_SAMPLES = _defaults.ip_id_min_samples
+ROUTE_ASN_CHANGE_SUSPICION = _defaults.route_asn_change_suspicion
+ROUTE_HOP_CHANGE_SUSPICION = _defaults.route_hop_change_suspicion
+TCP_FINGERPRINT_MISMATCH_SUSPICION = _defaults.tcp_fingerprint_mismatch_suspicion
+TTL_BASELINE_MIN_SAMPLES = _defaults.ttl_baseline_min_samples
+TTL_DEVIATION_SUSPICION = _defaults.ttl_deviation_suspicion
 from peerwatch.route_tracker import RouteChangeKind
 
 from .factories import scan, warm_up
