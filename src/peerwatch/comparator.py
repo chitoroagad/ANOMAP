@@ -50,7 +50,7 @@ class Comparator:
 
     def print_report(self) -> None:
         summaries = self.summarise()
-        width = 60
+        width = 80
         print(f"\n{'=' * width}")
         print(f"Temporal Drift Report  ({len(summaries)} peers)")
         print(f"{'=' * width}")

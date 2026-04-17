@@ -16,7 +16,8 @@ import xmltodict
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from peerwatch import NmapParser, PeerStore
+from peerwatch import NmapParser
+from peerwatch.peer_store import PeerStore
 from peerwatch.agent import SuspiciousAgent
 from peerwatch.comparator import Comparator
 

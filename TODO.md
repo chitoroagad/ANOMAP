@@ -43,28 +43,35 @@
 ## Phase 2 — Additional Data Sources
 
 ### tcpdump / Passive Packet Capture
-- [ ] TTL consistency checker
-  - For each known peer, track expected TTL; deviations suggest spoofing or routing changes
-  - TTL fingerprinting: Linux defaults 64, Windows 128, Cisco 255
-- [ ] IP ID sequence anomaly detection
-  - Spoofed packets often have non-sequential or random IP ID fields
-  - Collect IP ID sequences per source IP and flag statistical outliers
-- [ ] Passive TCP/IP stack fingerprinting
-  - Window size, TCP options order, and MSS are OS-specific and hard to fake
-  - Cross-reference against nmap active OS detection in PeerStore
-- [ ] ARP monitoring
-  - Watch for ARP replies that don't match known MAC→IP mappings in PeerStore
-  - ARP spoofing is a direct precursor to MITM — this is a high-value signal
+- [x] TTL consistency checker
+  - `ingest_ttl_observation(ip, ttl)` — builds median-based baseline (TTL_BASELINE_MIN_SAMPLES=5),
+    snaps to OS default (64/128/255), flags deviations > 15 with +2.0 suspicion
+  - `snap_ttl_to_os_default()` / `ttl_to_os_hint()` helpers in `packet_capture.py`
+- [x] IP ID sequence anomaly detection
+  - `ingest_ip_id_observation(ip, ip_id)` — detects sequential pattern then flags jumps
+    > IP_ID_JUMP_THRESHOLD (5000) as spoofing indicator (+1.0)
+  - `_detect_sequential_ip_ids()` uses median delta; random IDs (Linux) stay silent
+- [x] Passive TCP/IP stack fingerprinting
+  - `ingest_tcp_fingerprint(ip, window_size, tcp_options, mss)` — infers OS via
+    penalty-weighted signature matching; flags contradiction with nmap OS (+2.0)
+  - `infer_os_from_tcp_fingerprint()` in `packet_capture.py` with known profiles
+    for Linux, Windows, macOS
+- [x] ARP monitoring
+  - `ingest_arp_observation(ip, mac)` — compares claimed MAC against known peer MAC;
+    fires `arp_spoofing_detected` event + 3.0 suspicion (highest single-event score)
+  - `PassiveCaptureObserver` + `SniffCaptureLoop` in `packet_capture.py` for live capture
 
 ### traceroute / Path Analysis
-- [ ] Route stability tracker
-  - Maintain expected hop sequence per destination
-  - Sudden route changes (different ASN, new intermediate hop) are suspicious
-- [ ] ASN consistency checks
-  - Map each hop's IP to its ASN (Team Cymru BGP lookup or offline data)
-  - Flag if a peer's traffic starts traversing unexpected ASNs
-- [ ] Asymmetric route detection
-  - Significant asymmetry between forward and reverse paths can indicate spoofing
+- [x] Route stability tracker
+  - `RouteTracker.observe(destination)` runs traceroute and compares against baseline
+  - `ingest_route_change(ip, destination, hops, change_kind)` scores peer (+1.0 / +1.5)
+  - `known_routes` dict on each Peer stores per-destination hop sequence
+- [x] ASN consistency checks
+  - `lookup_asn(ip)` via Team Cymru DNS (`origin.asn.cymru.com`) with whois fallback
+  - `RouteChangeKind.NEW_ASN_IN_PATH` fires when novel ASN appears in path (+1.5)
+- [x] Asymmetric route detection
+  - `RouteTracker.check_asymmetry(forward, reverse)` — Jaccard on responding IPs;
+    flags paths with similarity < 0.5 as `ASYMMETRIC_PATH`
 
 ---
 

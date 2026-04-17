@@ -57,6 +57,7 @@
           xmltodict
           sortedcontainers
           pytest
+          scapy
 
           pkgs.nmap
         ];

@@ -7,30 +7,55 @@ from pydantic import BaseModel, Field
 
 UNKNOWN_KEY = "unknown"
 
-# --- Suspicion weights ---
-# Validated against 86 scans per device on a home network:
+# --- Suspicion weights (Phase 1 — nmap-based) ---
 # - Port Jaccard stays at 1.0 for stable devices; drops below 0.6 only for genuine
 #   profile changes or ephemeral iOS ports (handled by baseline warmup).
 # - OS candidates are stable for real devices; "unknown" gaps are guarded separately.
 PORT_JACCARD_THRESHOLD = 0.6
-SERVICE_CHANGE_SUSPICION = 1.0       # protocol change on a shared port (e.g. ssh → http)
-PORT_PROTOCOL_MISMATCH_SUSPICION = 3.0  # well-known port running wrong protocol (backdoor signal)
+SERVICE_CHANGE_SUSPICION = 1.0  # protocol change on a shared port (e.g. ssh → http)
+PORT_PROTOCOL_MISMATCH_SUSPICION = (
+    3.0  # well-known port running wrong protocol (backdoor signal)
+)
 
-# --- Decay ---
+# --- Suspicion weights (Phase 2 — passive capture) ---
+# TTL deviation: a shift ≥ TTL_DEVIATION_THRESHOLD is too large to be routing change;
+# the most likely cause is a different physical device.
+TTL_BASELINE_MIN_SAMPLES = 5  # observations required before expected_ttl is locked in
+TTL_DEVIATION_THRESHOLD = 15  # absolute deviation that triggers suspicion
+TTL_DEVIATION_SUSPICION = 2.0  # score added for a confirmed TTL anomaly
+
+# ARP spoofing: a reply claiming a known MAC→IP binding is different is a direct
+# MITM precursor and earns the highest single-event score.
+ARP_SPOOF_SUSPICION = 3.0
+
+# TCP passive fingerprint: a SYN packet whose implied OS contradicts the nmap OS
+# suggests the device's TCP/IP stack was patched or the device was replaced.
+TCP_FINGERPRINT_MISMATCH_SUSPICION = 2.0
+
+# IP ID anomaly: a sudden jump in the IP ID counter that breaks a sequential
+# pattern indicates a different sender is generating packets for this source IP.
+IP_ID_MIN_SAMPLES = 8  # collect this many before enabling anomaly detection
+IP_ID_JUMP_THRESHOLD = 5000  # counter jump this large is flagged
+
+IP_ID_ANOMALY_SUSPICION = 1.0
+
+# Route change: scored separately by PeerStore.ingest_route_change() callers
+# who pass RouteChangeEvent objects from RouteTracker.
+ROUTE_HOP_CHANGE_SUSPICION = 1.0
+ROUTE_ASN_CHANGE_SUSPICION = 1.5
+
 # Suspicion halves every 3.5 days of clean scans, reaching ~25% after one week
 # and near-zero (~6%) after two weeks. Keeps legitimate one-off anomalies
 # (e.g. an OS upgrade) from permanently flagging a device.
 SUSPICION_HALF_LIFE_DAYS = 3.5
 
-# --- Baseline warmup ---
 # First N scans build a fingerprint baseline; anomaly scoring starts after that.
 BASELINE_MIN_SCANS = 5
 
-# --- Volatile peer TTL ---
 # Peers with no confirmed MAC are evicted after this many hours of inactivity.
 VOLATILE_PEER_TTL_HOURS = 24
 
-# --- Port → expected service-type (first segment of nmap service string) ---
+# --- Port -> expected service-type (first segment of nmap service string) ---
 # Conservative list of ports where a protocol mismatch is a strong backdoor signal.
 # Uses nmap's service-name conventions (split on "-", take first token).
 WELL_KNOWN_PORT_PROTOCOLS: dict[int, set[str]] = {
@@ -88,6 +113,24 @@ class Peer(BaseModel):
     flagged_port_mismatches: set[int] = Field(default_factory=set)
     metadata_history: list[NormalisedData] = Field(default_factory=list)
     identity_history: list[IdentityEvent] = Field(default_factory=list)
+
+    # TTL tracking: expected_ttl is None until TTL_BASELINE_MIN_SAMPLES observations
+    # have been collected and snapped to the nearest OS-default origin (64/128/255).
+    expected_ttl: int | None = None
+    ttl_samples: list[int] = Field(default_factory=list)
+
+    # IP ID tracking: recent sample window.  Once IP_ID_MIN_SAMPLES are collected
+    # and a sequential pattern is detected, large jumps are flagged.
+    ip_id_samples: list[int] = Field(default_factory=list)
+    ip_id_sequential: bool = False  # True once samples show sequential behaviour
+
+    # TCP passive fingerprint: the OS family implied by the most recent SYN packet.
+    # Updated on each new TCPFingerprintObservation; compared against nmap OS.
+    tcp_implied_os: str | None = None
+
+    # Route observations: map destination IP → list of responding hop IPs in order.
+    # Populated by ingest_route_change() after RouteTracker fires events.
+    known_routes: dict[str, list[str]] = Field(default_factory=dict)
 
     def record_event(self, event: str, **details):
         self.identity_history.append(
@@ -193,7 +236,9 @@ class PeerStore:
         """
         if now is None:
             now = datetime.now(timezone.utc)
-        cutoff = (now - timedelta(hours=VOLATILE_PEER_TTL_HOURS)).replace(tzinfo=timezone.utc)
+        cutoff = (now - timedelta(hours=VOLATILE_PEER_TTL_HOURS)).replace(
+            tzinfo=timezone.utc
+        )
         evicted = []
         with self._lock:
             for pid, peer in list(self.peers.items()):
@@ -209,6 +254,268 @@ class PeerStore:
                     evicted.append(pid)
                     logging.info(f"Evicted stale volatile peer {pid}")
         return evicted
+
+    def ingest_ttl_observation(self, ip: str, ttl: int) -> Peer | None:
+        """Record a TTL observation for the peer at *ip*.
+
+        Builds a baseline from the first TTL_BASELINE_MIN_SAMPLES observations
+        (snapping to the nearest OS-default origin).  Once the baseline is set,
+        deviations larger than TTL_DEVIATION_THRESHOLD add TTL_DEVIATION_SUSPICION
+        and record a ``ttl_deviation`` event.
+
+        Returns the peer that was updated, or None if no peer is known for *ip*.
+        """
+        from peerwatch.packet_capture import snap_ttl_to_os_default
+
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        with self._lock:
+            peer.ttl_samples.append(ttl)
+
+            if peer.expected_ttl is None:
+                if len(peer.ttl_samples) >= TTL_BASELINE_MIN_SAMPLES:
+                    # Use the median sample to resist outliers, then snap to an OS default.
+                    import statistics as _stats
+
+                    median_ttl = _stats.median(peer.ttl_samples)
+                    peer.expected_ttl = snap_ttl_to_os_default(int(median_ttl))
+                    peer.record_event(
+                        "ttl_baseline_established",
+                        expected_ttl=peer.expected_ttl,
+                        samples=len(peer.ttl_samples),
+                    )
+                    logging.info(
+                        "TTL baseline for peer %s: expected=%d",
+                        peer.internal_id,
+                        peer.expected_ttl,
+                    )
+            else:
+                deviation = abs(ttl - peer.expected_ttl)
+                if deviation > TTL_DEVIATION_THRESHOLD:
+                    peer.record_event(
+                        "ttl_deviation",
+                        observed_ttl=ttl,
+                        expected_ttl=peer.expected_ttl,
+                        deviation=deviation,
+                    )
+                    peer.suspicion_score += TTL_DEVIATION_SUSPICION
+                    logging.warning(
+                        "TTL anomaly for peer %s: observed=%d expected=%d (Δ%d)",
+                        peer.internal_id,
+                        ttl,
+                        peer.expected_ttl,
+                        deviation,
+                    )
+
+        return peer
+
+    def ingest_arp_observation(self, ip: str, mac: str) -> Peer | None:
+        """Record an ARP reply claiming *ip* is at *mac*.
+
+        If a peer is known for *ip* and its confirmed MAC differs from the
+        claimed *mac*, a ``arp_spoofing_detected`` event is recorded and
+        ARP_SPOOF_SUSPICION is added.
+
+        Returns the peer whose MAC was challenged, or None if *ip* is unknown.
+        """
+        from peerwatch import util
+
+        normalised_mac = util._normalise_mac(mac)
+        if normalised_mac is None:
+            return None
+
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        with self._lock:
+            if peer.mac_address and peer.mac_address.upper() != normalised_mac.upper():
+                peer.record_event(
+                    "arp_spoofing_detected",
+                    ip=ip,
+                    known_mac=peer.mac_address,
+                    claimed_mac=normalised_mac,
+                )
+                peer.suspicion_score += ARP_SPOOF_SUSPICION
+                logging.warning(
+                    "ARP spoofing: peer %s (IP %s) — known MAC %s, ARP claims %s",
+                    peer.internal_id,
+                    ip,
+                    peer.mac_address,
+                    normalised_mac,
+                )
+
+        return peer
+
+    def ingest_tcp_fingerprint(
+        self,
+        ip: str,
+        window_size: int,
+        tcp_options: list[str],
+        mss: int | None,
+    ) -> Peer | None:
+        """Record a passive TCP fingerprint observation for the peer at *ip*.
+
+        Infers the implied OS from the fingerprint and cross-references it
+        against the nmap-derived OS stored in the peer's metadata.  A
+        mismatch (e.g. TCP stack says Windows but nmap says Linux) records a
+        ``tcp_fingerprint_mismatch`` event and adds TCP_FINGERPRINT_MISMATCH_SUSPICION.
+
+        The ``tcp_implied_os`` field on Peer is updated on every call.
+
+        Returns the peer, or None if *ip* is unknown.
+        """
+        from peerwatch.packet_capture import infer_os_from_tcp_fingerprint
+
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        implied_os = infer_os_from_tcp_fingerprint(window_size, tcp_options, mss)
+        if implied_os is None:
+            return peer  # insufficient confidence to compare
+
+        with self._lock:
+            peer.tcp_implied_os = implied_os
+
+            # Compare against nmap OS (using the candidate set for robustness)
+            nmap_families = set(peer.metadata.os_candidates.keys())
+            if not nmap_families and peer.metadata.os != UNKNOWN_KEY:
+                nmap_families = {peer.metadata.os}
+
+            if nmap_families:
+                # Check whether any nmap candidate OS family could produce the TCP fingerprint.
+                # We map implied_os back to broader family names used in nmap output.
+                _IMPLIED_TO_NMAP: dict[str, set[str]] = {
+                    "Linux": {"Linux", "Android", "Google"},
+                    "Windows": {"Microsoft", "Windows"},
+                    "macOS": {"Apple", "macOS"},
+                }
+                compatible_families = _IMPLIED_TO_NMAP.get(implied_os, {implied_os})
+                if not (nmap_families & compatible_families):
+                    peer.record_event(
+                        "tcp_fingerprint_mismatch",
+                        implied_os=implied_os,
+                        nmap_os_candidates=sorted(nmap_families),
+                        window_size=window_size,
+                        tcp_options=tcp_options,
+                        mss=mss,
+                    )
+                    peer.suspicion_score += TCP_FINGERPRINT_MISMATCH_SUSPICION
+                    logging.warning(
+                        "TCP fingerprint mismatch for peer %s: TCP implies %s, nmap sees %s",
+                        peer.internal_id,
+                        implied_os,
+                        nmap_families,
+                    )
+
+        return peer
+
+    def ingest_ip_id_observation(self, ip: str, ip_id: int) -> Peer | None:
+        """Record an IP ID field observation for the peer at *ip*.
+
+        Builds a sample window of IP_ID_MIN_SAMPLES.  Once the window is full:
+        - Checks whether the samples form a roughly sequential pattern.
+        - On subsequent observations, a jump larger than IP_ID_JUMP_THRESHOLD
+          that breaks the sequential pattern records an ``ip_id_anomaly`` event
+          and adds IP_ID_ANOMALY_SUSPICION.
+
+        Returns the peer, or None if *ip* is unknown.
+        """
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        with self._lock:
+            samples = peer.ip_id_samples
+
+            if len(samples) < IP_ID_MIN_SAMPLES:
+                samples.append(ip_id)
+                if len(samples) == IP_ID_MIN_SAMPLES:
+                    peer.ip_id_sequential = _detect_sequential_ip_ids(samples)
+                return peer
+
+            # Sliding window: replace oldest sample
+            prev_ip_id = samples[-1]
+            samples.append(ip_id)
+            if len(samples) > IP_ID_MIN_SAMPLES * 2:
+                samples.pop(0)
+
+            if peer.ip_id_sequential:
+                # 16-bit wrap-around: IP IDs are mod-65536
+                jump = (ip_id - prev_ip_id) % 65536
+                if jump > IP_ID_JUMP_THRESHOLD:
+                    peer.record_event(
+                        "ip_id_anomaly",
+                        prev_ip_id=prev_ip_id,
+                        observed_ip_id=ip_id,
+                        jump=jump,
+                    )
+                    peer.suspicion_score += IP_ID_ANOMALY_SUSPICION
+                    logging.warning(
+                        "IP ID anomaly for peer %s: jump of %d (prev=%d, now=%d)",
+                        peer.internal_id,
+                        jump,
+                        prev_ip_id,
+                        ip_id,
+                    )
+
+        return peer
+
+    def ingest_route_change(
+        self,
+        ip: str,
+        destination: str,
+        new_hops: list[str],
+        change_kind: str,
+        details: dict | None = None,
+    ) -> Peer | None:
+        """Record a route change for the peer at *ip* towards *destination*.
+
+        Called by callers who have processed RouteTracker.observe() events.
+        Adds ROUTE_HOP_CHANGE_SUSPICION or ROUTE_ASN_CHANGE_SUSPICION depending
+        on *change_kind* and records a ``route_changed`` event.
+
+        Returns the peer, or None if *ip* is unknown.
+        """
+        from peerwatch.route_tracker import RouteChangeKind
+
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        score = 0.0
+        if change_kind == RouteChangeKind.HOP_SEQUENCE_CHANGED:
+            score = ROUTE_HOP_CHANGE_SUSPICION
+        elif change_kind == RouteChangeKind.NEW_ASN_IN_PATH:
+            score = ROUTE_ASN_CHANGE_SUSPICION
+        elif change_kind in (
+            RouteChangeKind.HOP_COUNT_CHANGED,
+            RouteChangeKind.ASYMMETRIC_PATH,
+        ):
+            score = ROUTE_HOP_CHANGE_SUSPICION
+
+        with self._lock:
+            peer.known_routes[destination] = new_hops
+            event_details: dict = {
+                "destination": destination,
+                "change_kind": str(change_kind),
+                "new_hops": new_hops,
+            }
+            if details:
+                event_details.update(details)
+            peer.record_event("route_changed", **event_details)
+            peer.suspicion_score += score
+            logging.warning(
+                "Route change for peer %s to %s: %s",
+                peer.internal_id,
+                destination,
+                change_kind,
+            )
+
+        return peer
 
     # --------------------
     # Internal helpers
@@ -260,7 +567,9 @@ class PeerStore:
 
             # Port–protocol mismatch: well-known port running the wrong service type.
             # Strong backdoor signal — only score after baseline is established.
-            for port, expected, actual in self._check_port_protocol_mismatches(incoming_data):
+            for port, expected, actual in self._check_port_protocol_mismatches(
+                incoming_data
+            ):
                 if port in prev.flagged_port_mismatches:
                     continue  # already flagged; don't accumulate on every scan
                 prev.record_event(
@@ -300,6 +609,12 @@ class PeerStore:
             flagged_port_mismatches=set(),
             metadata_history=[],
             identity_history=[],
+            expected_ttl=None,
+            ttl_samples=[],
+            ip_id_samples=[],
+            ip_id_sequential=False,
+            tcp_implied_os=None,
+            known_routes={},
         )
 
         peer.record_event("peer_created", mac=mac, ips=list(ips))
@@ -433,7 +748,7 @@ class PeerStore:
     @staticmethod
     def _compare_fingerprints(
         prev: NormalisedData, incoming: NormalisedData
-    ) -> "PeerStore.FingerprintComparison":  # noqa: F821
+    ) -> "PeerStore.FingerprintComparison":
         events = []
 
         # 1. OS family — compare candidate sets rather than single top pick.
@@ -509,3 +824,25 @@ class PeerStore:
             + ", ".join(str(p) for p in self.peers.values())
             + ")"
         )
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+
+def _detect_sequential_ip_ids(samples: list[int]) -> bool:
+    """Return True if the IP ID samples look sequential (typical of Windows / older stacks).
+
+    Computes per-step deltas (mod 65536) and checks whether the median step is
+    small (≤ 100), which is characteristic of a global counter that increments
+    by a fixed amount.  Modern Linux uses random IP IDs per connection, which
+    produce large, irregular deltas — those return False.
+    """
+    if len(samples) < 2:
+        return False
+    import statistics as _stats
+
+    deltas = [(samples[i + 1] - samples[i]) % 65536 for i in range(len(samples) - 1)]
+    median_delta = _stats.median(deltas)
+    return median_delta <= 100
