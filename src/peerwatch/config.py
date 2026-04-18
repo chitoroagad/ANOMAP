@@ -83,6 +83,12 @@ class PeerWatchConfig(BaseModel):
         description="Hours before a MAC-less peer is evicted for inactivity",
     )
 
+    # --- Phase 3: MAC vendor/OS cross-reference ---
+    mac_vendor_mismatch_suspicion: float = Field(
+        default=2.0,
+        description="Score added when MAC OUI vendor contradicts nmap OS family (e.g. Apple MAC + Linux)",
+    )
+
     # --- Agent ---
     suspicion_threshold: float = Field(
         default=3.0,

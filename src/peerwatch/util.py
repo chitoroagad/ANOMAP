@@ -1,5 +1,6 @@
 from peerwatch.parser import NormalisedData
-from peerwatch.peer_store import UNKNOWN_KEY
+
+UNKNOWN_KEY = "unknown"
 
 
 def _normalise_mac(mac: str | None) -> str | None:

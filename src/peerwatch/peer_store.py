@@ -5,15 +5,29 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 
-from peerwatch import util
 from peerwatch.config import PeerWatchConfig
 from peerwatch.parser import NormalisedData
+from peerwatch.util import _extract_ips, _jaccard_similarity, _normalise_mac
 
 UNKNOWN_KEY = "unknown"
 
 # --- Port -> expected service-type (first segment of nmap service string) ---
 # Conservative list of ports where a protocol mismatch is a strong backdoor signal.
 # Uses nmap's service-name conventions (split on "-", take first token).
+# MAC OUI vendor keywords → OS families that are compatible with that vendor.
+# Only vendors with a strongly constrained OS family are listed — generic NIC
+# vendors (Intel, Realtek, ASUSTek, etc.) are intentionally omitted to avoid
+# false positives on commodity PCs that can run any OS.
+# Keys are lowercase substrings; matching uses `key in vendor.lower()`.
+VENDOR_OS_COMPATIBILITY: dict[str, set[str]] = {
+    "apple": {"Apple", "macOS", "iOS"},
+    "raspberry pi": {"Linux"},
+    "microsoft": {"Microsoft", "Windows"},
+    "xbox": {"Microsoft", "Windows"},
+    "sony": {"Sony", "Android", "Linux", "Google"},
+    "amazon": {"Amazon", "Linux", "Android", "Google"},
+}
+
 WELL_KNOWN_PORT_PROTOCOLS: dict[int, set[str]] = {
     21: {"ftp"},
     22: {"ssh"},
@@ -64,6 +78,8 @@ class Peer(BaseModel):
     known_services: dict[int, set[str]] = Field(default_factory=dict)
     # Ports where a protocol mismatch has already been recorded — prevents repeated flagging.
     flagged_port_mismatches: set[int] = Field(default_factory=set)
+    # Set to True once a MAC OUI vendor / OS family mismatch has been recorded.
+    flagged_vendor_mismatch: bool = False
     metadata_history: list[NormalisedData] = Field(default_factory=list)
     identity_history: list[IdentityEvent] = Field(default_factory=list)
 
@@ -151,8 +167,8 @@ class PeerStore:
         """
         Checks peer for anomaly then adds/updates store
         """
-        mac = util._normalise_mac(data.mac_address)
-        ips = util._extract_ips(data)
+        mac = _normalise_mac(data.mac_address)
+        ips = _extract_ips(data)
 
         with self._lock:
             mac_id = self.mac_to_id.get(mac) if mac else None
@@ -276,7 +292,7 @@ class PeerStore:
         """
         from peerwatch import util
 
-        normalised_mac = util._normalise_mac(mac)
+        normalised_mac = _normalise_mac(mac)
         if normalised_mac is None:
             return None
 
@@ -519,6 +535,9 @@ class PeerStore:
             if "port_profile_changed" in comparison.events:
                 suspicion += 0.5
 
+            # MAC OUI vendor vs observed OS — fires once, strong spoofing signal.
+            suspicion += self._check_mac_vendor_os_mismatch(prev, incoming_data)
+
             # Port–protocol mismatch: well-known port running the wrong service type.
             # Strong backdoor signal — only score after baseline is established.
             for port, expected, actual in self._check_port_protocol_mismatches(
@@ -561,6 +580,7 @@ class PeerStore:
             metadata=data,
             known_services=known_services,
             flagged_port_mismatches=set(),
+            flagged_vendor_mismatch=False,
             metadata_history=[],
             identity_history=[],
             expected_ttl=None,
@@ -700,6 +720,58 @@ class PeerStore:
                 mismatches.append((port, expected, service))
         return mismatches
 
+    def _check_mac_vendor_os_mismatch(
+        self, peer: Peer, data: NormalisedData
+    ) -> float:
+        """Cross-reference MAC OUI vendor against observed OS family.
+
+        Fires at most once per peer (guarded by flagged_vendor_mismatch).
+        Only checks vendors in VENDOR_OS_COMPATIBILITY — generic NIC vendors
+        are skipped to avoid false positives.
+
+        Returns the suspicion increment (0.0 if no mismatch or already flagged).
+        """
+        if peer.flagged_vendor_mismatch:
+            return 0.0
+
+        vendor = (data.device_vendor or "").strip().lower()
+        if not vendor or vendor == "unknown":
+            return 0.0
+
+        # Substring match against known-constrained vendor keywords
+        compatible_os: set[str] | None = None
+        for keyword, families in VENDOR_OS_COMPATIBILITY.items():
+            if keyword in vendor:
+                compatible_os = families
+                break
+
+        if compatible_os is None:
+            return 0.0  # vendor not constrained enough to draw conclusions
+
+        scan_families = _os_candidate_families(data)
+        if not scan_families:
+            return 0.0  # insufficient OS info from nmap
+
+        if scan_families & compatible_os:
+            return 0.0  # at least one compatible family matches
+
+        # Genuine mismatch
+        peer.flagged_vendor_mismatch = True
+        peer.record_event(
+            "mac_vendor_os_mismatch",
+            vendor=data.device_vendor,
+            expected_os_families=sorted(compatible_os),
+            observed_os_families=sorted(scan_families),
+        )
+        logging.warning(
+            "MAC vendor/OS mismatch for peer %s: vendor=%r implies %s, nmap sees %s",
+            peer.internal_id,
+            data.device_vendor,
+            compatible_os,
+            scan_families,
+        )
+        return self._cfg.mac_vendor_mismatch_suspicion
+
     def _compare_fingerprints(
         self, prev: NormalisedData, incoming: NormalisedData
     ) -> "PeerStore.FingerprintComparison":
@@ -722,7 +794,7 @@ class PeerStore:
         # 2. Port set — Jaccard similarity
         prev_ports = set(prev.open_ports)
         curr_ports = set(incoming.open_ports)
-        port_jaccard = util._jaccard_similarity(prev_ports, curr_ports)
+        port_jaccard = _jaccard_similarity(prev_ports, curr_ports)
         if (
             prev_ports | curr_ports
         ) and port_jaccard < self._cfg.port_jaccard_threshold:

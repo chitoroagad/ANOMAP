@@ -87,6 +87,11 @@ pytest
 | Route hop sequence changed | +1.0 |
 | New ASN in traceroute path | +1.5 |
 
+### Phase 3 — detection intelligence
+| Event | Score |
+|---|---|
+| MAC OUI vendor contradicts nmap OS (e.g. Apple MAC + Linux) | +2.0 |
+
 Investigation triggered at `suspicion_score ≥ 3.0`.
 
 ## Architecture notes

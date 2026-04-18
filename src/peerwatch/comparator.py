@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from peerwatch.peer_store import Peer, PeerStore
+from peerwatch.peer_store import PeerStore
 
 
 class Comparator:
