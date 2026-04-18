@@ -118,6 +118,9 @@ def parse_filename(name: str) -> str:
     return os.path.split(name)[1][:-4]
 
 
+PEER_STORE_PATH = Path("data/peer_store.json")
+
+
 if __name__ == "__main__":
     # files = glob.glob("./data/raw/*.xml")
     # for file in files:
@@ -125,21 +128,35 @@ if __name__ == "__main__":
     #         jsonify(f)
     cfg = load_config("config.json")
 
-    files = glob.glob("./data/processed/*.json")
-    peer_store = PeerStore(config=cfg)
-    for file in files:
+    peer_store = PeerStore.load(PEER_STORE_PATH, config=cfg)
+
+    all_files = glob.glob("./data/processed/*.json")
+    new_files = [
+        f for f in all_files
+        if Path(f).name not in peer_store.ingested_scan_files
+    ]
+    if new_files:
+        print(f"Ingesting {len(new_files)} new scan file(s) "
+              f"({len(all_files) - len(new_files)} already ingested).")
+    else:
+        print("No new scan files — running on existing PeerStore state.")
+
+    for file in new_files:
         with open(file) as f:
             data = json.load(f)
             for host in data:
                 parser = NmapParser(host)
                 normalised_data = parser.parse()
                 peer_store.add_or_update_peer(normalised_data)
+        peer_store.ingested_scan_files.add(Path(file).name)
 
     Comparator(peer_store).print_report()
 
     evicted = peer_store.evict_stale_volatile_peers()
     if evicted:
         print(f"Evicted {len(evicted)} stale volatile peer(s).")
+
+    peer_store.save(PEER_STORE_PATH)
 
     agent = SuspiciousAgent(
         peer_store=peer_store,

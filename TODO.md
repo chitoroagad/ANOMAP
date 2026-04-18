@@ -117,9 +117,10 @@
 
 ## Phase 5 — Production & Architecture
 
-- [ ] **Persistent storage**
-  - PeerStore currently lives in memory; add SQLite or JSON-on-disk persistence
-  - Required for long-running daemon and reboot survival; known_services must also persist
+- [x] **Persistent storage**
+  - JSON-on-disk snapshot via `PeerStore.save()` / `PeerStore.load()`
+  - All peer state persists: suspicion scores, known_services, TTL baselines, SSH/SSL anchors, identity history
+  - `ingested_scan_files` set prevents double-ingest on reload
 
 - [ ] **Daemon / scheduler**
   - Run nmap scans on a configurable interval automatically

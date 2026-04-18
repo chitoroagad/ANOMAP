@@ -1,7 +1,9 @@
+import json
 import logging
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -156,6 +158,8 @@ class PeerStore:
         self.mac_to_id = {}
         self.ip_to_id = {}
         self._cfg = config if config is not None else PeerWatchConfig()
+        # Basenames of scan files already ingested — used to skip re-ingest on reload.
+        self.ingested_scan_files: set[str] = set()
 
     # --------------------
     # Public API
@@ -232,6 +236,82 @@ class PeerStore:
                     evicted.append(pid)
                     logging.info(f"Evicted stale volatile peer {pid}")
         return evicted
+
+    # --------------------
+    # Persistence
+    # --------------------
+
+    _SNAPSHOT_VERSION = 1
+
+    def save(self, path: str | Path) -> None:
+        """Serialize PeerStore state to a JSON snapshot file.
+
+        Saves all peer data (including suspicion scores, history, cryptographic
+        anchors, and passive-capture baselines) plus the set of already-ingested
+        scan file basenames so that the next run skips re-ingest.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            snapshot = {
+                "version": self._SNAPSHOT_VERSION,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "ingested_scan_files": sorted(self.ingested_scan_files),
+                "peers": {
+                    pid: peer.model_dump(mode="json")
+                    for pid, peer in self.peers.items()
+                },
+            }
+        with open(path, "w") as f:
+            json.dump(snapshot, f, indent=2, default=str)
+        logging.info("PeerStore saved: %d peers → %s", len(self.peers), path)
+        print(f"PeerStore saved: {len(self.peers)} peers → {path}")
+
+    @classmethod
+    def load(cls, path: str | Path, config: PeerWatchConfig | None = None) -> "PeerStore":
+        """Load PeerStore from a JSON snapshot produced by :meth:`save`.
+
+        Rebuilds the MAC→ID and IP→ID indexes from peer data.
+        Returns a fresh empty store if *path* does not exist.
+        """
+        path = Path(path)
+        store = cls(config=config)
+        if not path.exists():
+            logging.info("No PeerStore snapshot at %s, starting fresh", path)
+            return store
+        with open(path) as f:
+            snapshot = json.load(f)
+        version = snapshot.get("version", 0)
+        if version != cls._SNAPSHOT_VERSION:
+            logging.warning(
+                "PeerStore snapshot version mismatch (got %d, expected %d) — starting fresh",
+                version,
+                cls._SNAPSHOT_VERSION,
+            )
+            return store
+        for pid, peer_data in snapshot.get("peers", {}).items():
+            try:
+                peer = Peer.model_validate(peer_data)
+            except Exception as e:
+                logging.warning("Skipping malformed peer %s: %s", pid, e)
+                continue
+            store.peers[pid] = peer
+            if peer.mac_address:
+                store.mac_to_id[peer.mac_address] = pid
+            for ip in peer.ips:
+                store.ip_to_id[ip] = pid
+        store.ingested_scan_files = set(snapshot.get("ingested_scan_files", []))
+        logging.info(
+            "PeerStore loaded: %d peers, %d ingested files ← %s",
+            len(store.peers),
+            len(store.ingested_scan_files),
+            path,
+        )
+        print(
+            f"PeerStore loaded: {len(store.peers)} peers, "
+            f"{len(store.ingested_scan_files)} previously ingested files."
+        )
+        return store
 
     def ingest_ttl_observation(self, ip: str, ttl: int) -> Peer | None:
         """Record a TTL observation for the peer at *ip*.
