@@ -91,6 +91,8 @@ pytest
 | Event | Score |
 |---|---|
 | MAC OUI vendor contradicts nmap OS (e.g. Apple MAC + Linux) | +2.0 |
+| SSH host key fingerprint changed on known port | +3.0 |
+| SSL/TLS certificate fingerprint changed on known port | +2.0 |
 
 Investigation triggered at `suspicion_score ≥ 3.0`.
 

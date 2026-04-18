@@ -89,6 +89,16 @@ class PeerWatchConfig(BaseModel):
         description="Score added when MAC OUI vendor contradicts nmap OS family (e.g. Apple MAC + Linux)",
     )
 
+    # --- Phase 3: cryptographic identity checks ---
+    ssh_host_key_change_suspicion: float = Field(
+        default=3.0,
+        description="Score added when SSH host key fingerprint changes (near-certain device swap)",
+    )
+    ssl_cert_change_suspicion: float = Field(
+        default=2.0,
+        description="Score added when SSL/TLS certificate fingerprint changes on a known port",
+    )
+
     # --- Agent ---
     suspicion_threshold: float = Field(
         default=3.0,

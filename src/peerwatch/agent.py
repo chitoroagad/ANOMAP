@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,7 +99,12 @@ class SuspiciousAgent:
         )
 
         decision = self._analyse(peer)
-        scan_results = self._execute_scans(peer, decision.recommended_scans)
+
+        # Always run cryptographic identity checks for peers with SSH/HTTPS ports
+        # open — these catch service-mimicry evasion that LLM may not know to request.
+        auto_checks = self._build_auto_identity_checks(peer, decision.recommended_scans)
+        all_recs = list(decision.recommended_scans) + auto_checks
+        scan_results = self._execute_scans(peer, all_recs)
 
         report = InvestigationReport(
             peer_id=peer.internal_id,
@@ -180,6 +186,39 @@ class SuspiciousAgent:
     # Scan execution
     # --------------------
 
+    def _build_auto_identity_checks(
+        self, peer: Peer, already_recommended: list[ScanRecommendation]
+    ) -> list[ScanRecommendation]:
+        """Return ssh_hostkey / ssl_cert recommendations for open ports not already covered."""
+        recommended_types = {r.type for r in already_recommended}
+        extra: list[ScanRecommendation] = []
+
+        ssh_ports = [
+            p for p, svc in peer.metadata.services.items()
+            if isinstance(svc, str) and svc.lower().startswith("ssh")
+        ] or ([22] if 22 in peer.metadata.open_ports else [])
+
+        ssl_ports = [
+            p for p, svc in peer.metadata.services.items()
+            if isinstance(svc, str) and any(k in svc.lower() for k in ("https", "ssl", "tls"))
+        ] or ([443] if 443 in peer.metadata.open_ports else [])
+
+        if ssh_ports and "ssh_hostkey" not in recommended_types:
+            extra.append(
+                ScanRecommendation(
+                    type="ssh_hostkey",
+                    reason="Auto: verify SSH host key has not changed (service-mimicry check)",
+                )
+            )
+        if ssl_ports and "ssl_cert" not in recommended_types:
+            extra.append(
+                ScanRecommendation(
+                    type="ssl_cert",
+                    reason="Auto: verify SSL/TLS certificate has not changed (identity anchor)",
+                )
+            )
+        return extra
+
     def _execute_scans(
         self, peer: Peer, recommendations: list[ScanRecommendation]
     ) -> list[ScanResult]:
@@ -199,6 +238,10 @@ class SuspiciousAgent:
                     result = self._run_traceroute(target)
                 case "tcpdump":
                     result = self._run_tcpdump(target)
+                case "ssh_hostkey":
+                    result = self._run_ssh_hostkey(target, peer)
+                case "ssl_cert":
+                    result = self._run_ssl_cert(target, peer)
                 case _:
                     logging.warning(f"Unknown scan type requested: {rec.type}")
                     continue
@@ -235,6 +278,135 @@ class SuspiciousAgent:
             return ScanResult(type="nmap", output="", error="nmap not found in PATH")
         except Exception as e:
             return ScanResult(type="nmap", output="", error=str(e))
+
+    def _run_ssh_hostkey(self, ip: str, peer: Peer) -> ScanResult:
+        """Fetch SSH host key fingerprints and compare against stored baseline."""
+        ssh_ports = [
+            p for p, svc in peer.metadata.services.items()
+            if isinstance(svc, str) and svc.lower().startswith("ssh")
+        ] or ([22] if 22 in peer.metadata.open_ports else [22])
+        port_arg = ",".join(str(p) for p in ssh_ports)
+
+        try:
+            proc = subprocess.run(
+                ["nmap", "-p", port_arg, "--script", "ssh-hostkey", "-oX", "-", ip],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if proc.returncode != 0:
+                return ScanResult(
+                    type="ssh_hostkey", output=proc.stdout, error=proc.stderr
+                )
+
+            changed_ports: list[int] = []
+            try:
+                nmaprun = xmltodict.parse(proc.stdout).get("nmaprun", {})
+                hosts = nmaprun.get("host", [])
+                if isinstance(hosts, dict):
+                    hosts = [hosts]
+                for host in hosts:
+                    ports_data = (host.get("ports") or {}).get("port", [])
+                    if isinstance(ports_data, dict):
+                        ports_data = [ports_data]
+                    for port_data in ports_data:
+                        portid = int(port_data.get("@portid", 0))
+                        if not portid:
+                            continue
+                        scripts = port_data.get("script", [])
+                        if isinstance(scripts, dict):
+                            scripts = [scripts]
+                        for script in scripts:
+                            if script.get("@id") != "ssh-hostkey":
+                                continue
+                            output = script.get("@output", "")
+                            fps = _parse_ssh_fingerprints(output)
+                            if fps:
+                                prev = peer.ssh_host_keys.get(portid)
+                                self.peer_store.ingest_ssh_hostkeys(ip, portid, fps)
+                                if prev and prev != sorted(fps):
+                                    changed_ports.append(portid)
+            except Exception as parse_err:
+                logging.warning(f"ssh_hostkey parse error: {parse_err}")
+
+            annotation = (
+                f" [KEY CHANGED on ports {changed_ports}]" if changed_ports else ""
+            )
+            return ScanResult(type="ssh_hostkey", output=proc.stdout + annotation)
+        except subprocess.TimeoutExpired:
+            return ScanResult(
+                type="ssh_hostkey", output="", error="timed out after 60s"
+            )
+        except FileNotFoundError:
+            return ScanResult(
+                type="ssh_hostkey", output="", error="nmap not found in PATH"
+            )
+        except Exception as e:
+            return ScanResult(type="ssh_hostkey", output="", error=str(e))
+
+    def _run_ssl_cert(self, ip: str, peer: Peer) -> ScanResult:
+        """Fetch SSL/TLS certificate fingerprints and compare against stored baseline."""
+        ssl_ports = [
+            p for p, svc in peer.metadata.services.items()
+            if isinstance(svc, str)
+            and any(k in svc.lower() for k in ("https", "ssl", "tls"))
+        ] or ([443] if 443 in peer.metadata.open_ports else [443])
+        port_arg = ",".join(str(p) for p in ssl_ports)
+
+        try:
+            proc = subprocess.run(
+                ["nmap", "-p", port_arg, "--script", "ssl-cert", "-oX", "-", ip],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if proc.returncode != 0:
+                return ScanResult(
+                    type="ssl_cert", output=proc.stdout, error=proc.stderr
+                )
+
+            changed_ports: list[int] = []
+            try:
+                nmaprun = xmltodict.parse(proc.stdout).get("nmaprun", {})
+                hosts = nmaprun.get("host", [])
+                if isinstance(hosts, dict):
+                    hosts = [hosts]
+                for host in hosts:
+                    ports_data = (host.get("ports") or {}).get("port", [])
+                    if isinstance(ports_data, dict):
+                        ports_data = [ports_data]
+                    for port_data in ports_data:
+                        portid = int(port_data.get("@portid", 0))
+                        if not portid:
+                            continue
+                        scripts = port_data.get("script", [])
+                        if isinstance(scripts, dict):
+                            scripts = [scripts]
+                        for script in scripts:
+                            if script.get("@id") != "ssl-cert":
+                                continue
+                            output = script.get("@output", "")
+                            fp = _parse_ssl_cert_fingerprint(output)
+                            if fp:
+                                prev = peer.ssl_cert_fingerprints.get(portid)
+                                self.peer_store.ingest_ssl_cert(ip, portid, fp)
+                                if prev and prev != fp:
+                                    changed_ports.append(portid)
+            except Exception as parse_err:
+                logging.warning(f"ssl_cert parse error: {parse_err}")
+
+            annotation = (
+                f" [CERT CHANGED on ports {changed_ports}]" if changed_ports else ""
+            )
+            return ScanResult(type="ssl_cert", output=proc.stdout + annotation)
+        except subprocess.TimeoutExpired:
+            return ScanResult(type="ssl_cert", output="", error="timed out after 60s")
+        except FileNotFoundError:
+            return ScanResult(
+                type="ssl_cert", output="", error="nmap not found in PATH"
+            )
+        except Exception as e:
+            return ScanResult(type="ssl_cert", output="", error=str(e))
 
     def _run_traceroute(self, ip: str) -> ScanResult:
         try:
@@ -298,6 +470,26 @@ class SuspiciousAgent:
         ipv4 = [ip for ip in peer.ips if "." in ip]
         ipv6 = [ip for ip in peer.ips if ":" in ip]
         return (ipv4 or ipv6 or [None])[0]
+
+
+def _parse_ssh_fingerprints(script_output: str) -> list[str]:
+    """Extract SHA256 fingerprints from nmap ssh-hostkey script output text.
+
+    nmap emits lines like: ``2048 SHA256:AbCdEf... (RSA)``
+    """
+    return sorted(re.findall(r"SHA256:[A-Za-z0-9+/=]+", script_output))
+
+
+def _parse_ssl_cert_fingerprint(script_output: str) -> str | None:
+    """Extract the SHA-256 certificate fingerprint from nmap ssl-cert script output.
+
+    nmap emits a line like: ``SHA-256: aa:bb:cc:...`` (colon-separated hex bytes).
+    Returns the fingerprint as a lowercase hex string without colons, or None.
+    """
+    m = re.search(r"SHA-256:\s*([0-9a-fA-F:]+)", script_output)
+    if not m:
+        return None
+    return m.group(1).replace(":", "").lower()
 
 
 def _strip_code_fence(text: str) -> str:

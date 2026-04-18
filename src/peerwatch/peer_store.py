@@ -101,6 +101,14 @@ class Peer(BaseModel):
     # Populated by ingest_route_change() after RouteTracker fires events.
     known_routes: dict[str, list[str]] = Field(default_factory=dict)
 
+    # Cryptographic identity anchors (Phase 3).
+    # ssh_host_keys: port → sorted list of SHA256 fingerprints (one per key type).
+    # ssl_cert_fingerprints: port → hex SHA-256 cert fingerprint.
+    # Both fields are populated by SuspiciousAgent during investigation and compared
+    # on every subsequent scan to detect device-swap (near-certain spoofing signal).
+    ssh_host_keys: dict[int, list[str]] = Field(default_factory=dict)
+    ssl_cert_fingerprints: dict[int, str] = Field(default_factory=dict)
+
     def record_event(self, event: str, **details):
         self.identity_history.append(
             IdentityEvent(
@@ -484,6 +492,76 @@ class PeerStore:
                 destination,
                 change_kind,
             )
+
+        return peer
+
+    def ingest_ssh_hostkeys(
+        self, ip: str, port: int, fingerprints: list[str]
+    ) -> Peer | None:
+        """Record SSH host key fingerprints for the peer at *ip* on *port*.
+
+        On first observation the keys are stored as the trusted baseline.
+        On subsequent calls, if the key set differs (any key added, removed, or
+        replaced) a ``ssh_host_key_changed`` event is recorded and
+        ``ssh_host_key_change_suspicion`` is added to the score.
+
+        Returns the peer, or None if *ip* is unknown.
+        """
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        sorted_fps = sorted(fingerprints)
+        with self._lock:
+            if port in peer.ssh_host_keys:
+                if peer.ssh_host_keys[port] != sorted_fps:
+                    peer.record_event(
+                        "ssh_host_key_changed",
+                        port=port,
+                        old_keys=peer.ssh_host_keys[port],
+                        new_keys=sorted_fps,
+                    )
+                    peer.suspicion_score += self._cfg.ssh_host_key_change_suspicion
+                    logging.warning(
+                        "SSH host key changed for peer %s on port %d",
+                        peer.internal_id,
+                        port,
+                    )
+            peer.ssh_host_keys[port] = sorted_fps
+
+        return peer
+
+    def ingest_ssl_cert(
+        self, ip: str, port: int, fingerprint: str
+    ) -> Peer | None:
+        """Record an SSL/TLS certificate SHA-256 fingerprint for *ip* on *port*.
+
+        On first observation the fingerprint is stored as the trusted baseline.
+        On subsequent calls, if the fingerprint differs a ``ssl_cert_changed``
+        event is recorded and ``ssl_cert_change_suspicion`` is added to the score.
+
+        Returns the peer, or None if *ip* is unknown.
+        """
+        peer = self.get_peer(ip=ip)
+        if peer is None:
+            return None
+
+        with self._lock:
+            if port in peer.ssl_cert_fingerprints:
+                if peer.ssl_cert_fingerprints[port] != fingerprint:
+                    peer.record_event(
+                        "ssl_cert_changed",
+                        port=port,
+                        old_fingerprint=peer.ssl_cert_fingerprints[port],
+                        new_fingerprint=fingerprint,
+                    )
+                    peer.suspicion_score += self._cfg.ssl_cert_change_suspicion
+                    logging.warning(
+                        "SSL cert changed for peer %s on port %d",
+                        peer.internal_id,
+                        port,
+                    )
+            peer.ssl_cert_fingerprints[port] = fingerprint
 
         return peer
 
