@@ -14,7 +14,7 @@ from peerwatch.parser import NmapParser
 from peerwatch.peer_store import Peer, PeerStore
 
 DEFAULT_SUSPICION_THRESHOLD = 3.0
-DEFAULT_MODEL = "phi4-mini:latest"
+DEFAULT_MODEL = "phi4:latest"
 _ANALYSIS_SYSTEM_PROMPT = ""
 
 with open("./prompts/suspicious_agent.txt") as f:
@@ -74,7 +74,9 @@ class SuspiciousAgent:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.threshold = threshold
-        self.llm = init_chat_model(model, model_provider="ollama", temperature=0)
+        self.llm = init_chat_model(
+            model, model_provider="ollama", temperature=0, format="json"
+        )
 
     # --------------------
     # Public API

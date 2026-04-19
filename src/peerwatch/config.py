@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -105,8 +106,49 @@ class PeerWatchConfig(BaseModel):
         description="Suspicion score that triggers LLM investigation",
     )
     model: str = Field(
-        default="phi4-mini:latest",
+        default="phi4:latest",
         description="Ollama model used by SuspiciousAgent",
+    )
+
+    # --- Daemon ---
+    subnet: str = Field(
+        default="192.168.1.0/24",
+        description="Subnet to scan (CIDR notation)",
+    )
+    scan_interval_minutes: int = Field(
+        default=5,
+        description="How often to run a new nmap scan",
+    )
+    min_scan_interval_minutes: int = Field(
+        default=2,
+        description="Minimum gap between scans — skips a tick if too soon",
+    )
+
+    # --- Remediation ---
+    remediation_mode: Literal["dry_run", "confirm", "enforce"] = Field(
+        default="dry_run",
+        description=(
+            "dry_run: log only | confirm: prompt before executing | "
+            "enforce: execute iptables rules immediately (requires root)"
+        ),
+    )
+    block_confidence_floor: float = Field(
+        default=5.0,
+        description=(
+            "Minimum suspicion_score required to trigger a block. "
+            "Higher than the 3.0 investigation threshold to reduce false positives."
+        ),
+    )
+    block_ttl_hours: int = Field(
+        default=24,
+        description="Hours before an active block is automatically removed",
+    )
+    never_block: list[str] = Field(
+        default_factory=list,
+        description=(
+            "IPs or MAC addresses that will never be blocked. "
+            "Add your gateway, DNS server, etc. here."
+        ),
     )
 
 

@@ -24,5 +24,14 @@
   "volatile_peer_ttl_hours": 24,
 
   "suspicion_threshold": 3.0,
-  "model": "phi4-mini:latest"
+  "model": "phi4:latest",
+
+  "subnet": "192.168.1.0/24",
+  "scan_interval_minutes": 5,
+  "min_scan_interval_minutes": 2,
+
+  "remediation_mode": "dry_run",
+  "block_confidence_floor": 5.0,
+  "block_ttl_hours": 24,
+  "never_block": ["192.168.1.1"]
 }
