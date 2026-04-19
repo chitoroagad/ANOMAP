@@ -196,6 +196,13 @@
   - Mismatch adds ~+2.0 suspicion — same weight as TCP fingerprint mismatch
   - Requires passive capture (scapy filter: `port 67 or port 68`)
 
-- [ ] **Fleet simulation coverage for scenario D**
-  - Scenario D (cross-device identity conflict) currently scores ≥ 1.0 — below the 3.0 threshold
-  - Add a fleet simulation test that drives two peers into identity conflict simultaneously and verifies `identity_sweep` fires and boosts both peers above threshold
+- [x] **Full fleet simulation coverage**
+  - F8: `service_sweep` pattern (4 peers, service_type_changed)
+  - F9: `ttl_shift` pattern (3 peers, ttl_deviation)
+  - F10: `identity_sweep` OR branch via `identity_conflict_detected`
+  - F11: window boundary — stale events before `last_tick_at` excluded
+  - F12: Scenario D closure — peers at 1.0 individually, `identity_sweep` boost tips both above 3.0 threshold
+  - F13: partial fleet match — non-matching peers in the store are not boosted
+  - F14: `event_count` reflects multiple firings per peer within a tick
+  - F15: empty tick (last_tick_at set, no events) returns empty list cleanly
+  - F16: exhaustive FleetEvent field verification (peer_ids, ips, event_count, timestamps, description)

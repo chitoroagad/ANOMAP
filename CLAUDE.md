@@ -1,51 +1,74 @@
 # PeerWatch — CLAUDE.md
 
-Autonomous network anomaly detection tool. Fingerprints subnet devices via nmap, tracks identity over time in `PeerStore`, triggers LLM investigation when suspicion threshold crossed.
+Autonomous network anomaly detection tool. Fingerprints subnet devices via nmap, tracks identity over time in `PeerStore`, detects coordinated attacks via fleet-level correlation, and triggers LLM investigation when the suspicion threshold is crossed.
 
 ## Project layout
 
 ```
-main.py                     entry point
+daemon.py                   production entry point — periodic scan loop
+main.py                     one-shot entry point (legacy, still works)
+config.json                 runtime config (copy from config.example.json)
+config.example.json         all config fields with defaults documented
 src/peerwatch/
   parser.py                 nmap XML host → NormalisedData
-  peer_store.py             device identity store + fingerprint comparisons + Phase 2 ingest
-  comparator.py             structural temporal drift analyser over PeerStore
+  peer_store.py             device identity store + fingerprint comparisons + passive ingest
+  comparator.py             structural temporal drift analyser over PeerStore (logs report)
   packet_capture.py         Phase 2: passive observation models + scapy capture loop
   route_tracker.py          Phase 2: traceroute path stability + Team Cymru ASN lookup
-  agent.py                  SuspiciousAgent — LLM-driven investigation + reports
-  embedder.py               embedding helpers (currently unused in main pipeline)
+  fleet_correlator.py       Phase 3: coordinated attack detection across multiple peers
+  agent.py                  SuspiciousAgent — LLM investigation + rule-based fallback
+  remediation.py            autonomous blocking via iptables (dry_run / confirm / enforce)
+  config.py                 Pydantic config model — all thresholds and weights
+  embedder.py               embedding helpers (unused in main pipeline)
   util.py                   shared helpers
-prompts/                    LLM system prompts (loaded at startup)
+prompts/
+  suspicious_agent.txt      LLM system prompt (fleet context guide included)
 data/
   raw/                      nmap XML (not committed)
   processed/                nmap JSON (not committed)
-reports/                    investigation JSON output (not committed)
-logs/                       app.log (not committed)
+  peer_store.json           persistent PeerStore snapshot (not committed)
+alerts/
+  alerts.jsonl              per-peer investigation alerts (not committed)
+  fleet_alerts.jsonl        fleet-level pattern alerts (not committed)
+blocks/
+  blocks.jsonl              remediation audit log (not committed)
+reports/                    LLM investigation JSON reports (not committed)
+logs/
+  daemon.log                all logging output (not committed)
 tests/
-  simulation/               attack scenario simulation tests (Phase 1 + Phase 2)
+  simulation/
+    test_simulation.py      Phase 1+2 attack scenarios A–I (CVE/ATT&CK referenced)
+    test_phase2_passive.py  Phase 2 passive capture unit tests
+    test_fleet_simulation.py fleet correlation scenarios F1–F16
   test_parser.py
   test_peer_store.py
+  test_phase3.py
   test_embedder.py
-scripts/                    one-off scripts
-writeup/                    thesis in Typst
+scripts/                    one-off scripts (benchmark.py, etc.)
+docs/                       design docs for implemented features
+writeup/                    thesis in Typst (main.typ)
 ```
 
 ## Dev environment
 
 Nix flake — `nix develop` for Python shell, `nix develop .#writeup` for Typst.
 
-Requires Ollama running locally. Default model: `phi4-mini:latest`.
+Requires Ollama running locally. Default model: `phi4:latest` (14B).
+If Ollama is unavailable the agent falls back to rule-based severity assignment.
 
 ## Run
 
 ```sh
-python main.py        # loads data/processed/*.json, runs comparator, investigates suspicious peers
+# Production daemon (requires root for nmap OS detection)
+sudo python daemon.py
+sudo python daemon.py --config /path/to/config.json
+
+# One-shot (loads data/processed/*.json, runs comparator + agent)
+python main.py
 ```
 
-Convert raw nmap XML → JSON first:
-```sh
-python -c "import main; main.jsonify(open('data/raw/scan.xml'))"
-```
+Injection demo — drop a crafted nmap XML into `data/raw/` between scans;
+the daemon picks it up on the next tick via `convert_pending_xml()`.
 
 ## Test
 
@@ -53,16 +76,24 @@ python -c "import main; main.jsonify(open('data/raw/scan.xml'))"
 pytest
 ```
 
-`PYTHONPATH` set to `src/` via `pyproject.toml`.
+143 tests. `PYTHONPATH` set to `src/` via `pyproject.toml`.
 
-## Key constants (peer_store.py)
+## Config
 
-| Constant | Value | Meaning |
+All thresholds, weights, and daemon settings live in `config.py` as a Pydantic
+model. Copy `config.example.json` to `config.json` and adjust. Unset fields use
+defaults. Key fields:
+
+| Field | Default | Meaning |
 |---|---|---|
-| `BASELINE_MIN_SCANS` | 5 | Warmup period — no scoring until 5 scans seen |
-| `SUSPICION_HALF_LIFE_DAYS` | 3.5 | Exponential decay half-life |
-| `VOLATILE_PEER_TTL_HOURS` | 24 | Evict MAC-less peers inactive this long |
-| `PORT_PROTOCOL_MISMATCH_SUSPICION` | 3.0 | Score added for port/protocol mismatch |
+| `subnet` | `192.168.1.0/24` | Subnet to scan |
+| `scan_interval_minutes` | `5` | How often to run nmap |
+| `min_scan_interval_minutes` | `2` | Rate-limit floor |
+| `suspicion_threshold` | `3.0` | Score that triggers LLM investigation |
+| `model` | `phi4:latest` | Ollama model |
+| `remediation_mode` | `dry_run` | `dry_run` / `confirm` / `enforce` |
+| `block_confidence_floor` | `5.0` | Min score to trigger a block |
+| `never_block` | `[]` | IPs/MACs never blocked (add gateway + self) |
 
 ## Suspicion scoring
 
@@ -93,13 +124,49 @@ pytest
 | MAC OUI vendor contradicts nmap OS (e.g. Apple MAC + Linux) | +2.0 |
 | SSH host key fingerprint changed on known port | +3.0 |
 | SSL/TLS certificate fingerprint changed on known port | +2.0 |
+| Fleet correlation boost (coordinated attack pattern) | +1.0–+2.0 (capped at +4.0/tick) |
 
 Investigation triggered at `suspicion_score ≥ 3.0`.
+
+## Fleet correlation patterns
+
+`FleetCorrelator` runs each tick after ingestion, before `SuspiciousAgent`.
+A pattern fires when ≥ N peers show the same anomaly event within one tick window.
+
+| Pattern | Trigger event(s) | Min peers | Boost |
+|---|---|---|---|
+| `arp_poisoning` | `arp_spoofing_detected` | 2 | +2.0 |
+| `identity_sweep` | `full_identity_shift` or `identity_conflict_detected` | 2 | +2.0 |
+| `route_shift` | `route_changed` | 3 | +1.5 |
+| `os_normalisation` | `os_family_changed` | 3 | +1.5 |
+| `ttl_shift` | `ttl_deviation` | 3 | +1.5 |
+| `service_sweep` | `service_type_changed` | 4 | +1.0 |
+
+Fleet context is injected into the LLM prompt so the agent reasons about
+coordinated attacks, not just isolated per-peer anomalies.
+
+## Remediation
+
+`Remediator` runs after `SuspiciousAgent` each tick. Guards (all must pass):
+1. IP/MAC not in `never_block`
+2. `suspicion_score >= block_confidence_floor` (default 5.0)
+3. `severity == "high"`
+4. No active block already exists for this IP
+
+Blocks are iptables INPUT+OUTPUT DROP rules with a configurable TTL
+(`block_ttl_hours`, default 24h). Auto-unblocked on TTL expiry. All decisions
+written to `blocks/blocks.jsonl` for audit. The LLM is NOT in the
+authorization path — enforcement is purely rule-based.
+
+`enforce` mode requires root; silently downgrades to `dry_run` otherwise.
 
 ## Architecture notes
 
 - `PeerStore` keys devices by MAC; MAC-less (volatile) devices key by IP
 - `known_services` per port suppresses oscillating nmap fingerprint false positives
-- `Comparator` reads the full `PeerStore` and prints a drift report; does not mutate state
-- `SuspiciousAgent` calls LLM via LangChain + Ollama, can run follow-up nmap/traceroute/tcpdump
-- Embedder (`embedder.py`) exists but structured comparison replaced embedding-based approach
+- Suspicion decays exponentially: halves every 3.5 days (`suspicion_half_life_days`)
+- Warmup period: first 5 scans (`baseline_min_scans`) record events but don't score
+- `Comparator` reads the full `PeerStore` and logs a drift report; does not mutate state
+- `SuspiciousAgent` calls LLM via LangChain + Ollama with `format="json"` for grammar-constrained output; falls back to rule-based severity if Ollama is unavailable
+- `PeerStore.last_tick_at` is stamped at end of each tick and persisted; used by `FleetCorrelator` as the event window start
+- Embedder (`embedder.py`) exists but structured comparison replaced the embedding-based approach
