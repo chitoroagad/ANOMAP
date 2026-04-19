@@ -94,7 +94,7 @@ class SuspiciousAgent:
             if p.suspicion_score >= self.threshold
         ]
         if not suspicious:
-            print("No suspicious peers found.")
+            logging.info("No suspicious peers found.")
 
         # Build per-peer fleet context lookup.
         peer_fleet: dict[str, list[FleetEvent]] = {}
@@ -111,9 +111,10 @@ class SuspiciousAgent:
         self, peer: Peer, fleet_context: list[FleetEvent] | None = None
     ) -> InvestigationReport:
         """Full investigation pipeline for a single peer."""
-        print(
-            f"Investigating peer {peer.mac_address or peer.internal_id[:8]} "
-            f"(score={peer.suspicion_score:.1f})"
+        logging.info(
+            "Investigating peer %s (score=%.1f)",
+            peer.mac_address or peer.internal_id[:8],
+            peer.suspicion_score,
         )
 
         decision = self._analyse(peer, fleet_context=fleet_context)
@@ -138,7 +139,7 @@ class SuspiciousAgent:
         )
 
         path = self._write_report(report)
-        print(f"  [{report.severity.upper()}] → {path}")
+        logging.info("[%s] report → %s", report.severity.upper(), path)
         return report
 
     # --------------------
@@ -165,17 +166,39 @@ class SuspiciousAgent:
                 recommended_actions=data.get("recommended_actions", []),
             )
         except Exception as e:
-            logging.warning(f"LLM analysis failed for {peer.internal_id}: {e}")
-            return AgentDecision(
-                explanation="Automated analysis failed — manual review required.",
-                severity="medium",
-                recommended_scans=[
-                    ScanRecommendation(
-                        type="nmap", reason="Verify current device state"
-                    )
-                ],
-                recommended_actions=["Review peer event history manually"],
-            )
+            logging.warning("LLM analysis failed for %s: %s — using rule-based fallback", peer.internal_id, e)
+            return self._rule_based_fallback(peer)
+
+    def _rule_based_fallback(self, peer: Peer) -> AgentDecision:
+        """Assign severity and basic recommendations without LLM, used when Ollama is unavailable."""
+        score = peer.suspicion_score
+        if score >= 7.0:
+            severity = "high"
+        elif score >= 4.0:
+            severity = "medium"
+        else:
+            severity = "low"
+
+        fired = {e.event for e in peer.identity_history}
+        recs: list[ScanRecommendation] = [
+            ScanRecommendation(type="nmap", reason="Re-fingerprint to verify current device state")
+        ]
+        if "route_changed" in fired or "ttl_deviation" in fired:
+            recs.append(ScanRecommendation(type="traceroute", reason="Verify network path has not changed"))
+        if "arp_spoofing_detected" in fired or "ttl_deviation" in fired:
+            recs.append(ScanRecommendation(type="tcpdump", reason="Observe passive TTL and ARP behaviour"))
+
+        top_events = sorted(fired - {"peer_created"}, key=lambda e: e)[:5]
+        explanation = (
+            f"[Rule-based fallback — LLM unavailable] "
+            f"Score {score:.1f}. Events: {', '.join(top_events) or 'none'}."
+        )
+        return AgentDecision(
+            explanation=explanation,
+            severity=severity,
+            recommended_scans=recs,
+            recommended_actions=["Review peer event history manually", "Confirm LLM service is running"],
+        )
 
     def _format_peer_context(
         self, peer: Peer, fleet_context: list[FleetEvent] | None = None

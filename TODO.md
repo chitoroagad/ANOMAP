@@ -170,19 +170,20 @@
 
 ## Phase 7 — Code Quality
 
-- [ ] **Fix `_resolve_conflict` survivor selection bug**
-  - `peer_store.py` line ~824: `max(peers, key=lambda p: p.is_volatile)` picks the *more* volatile peer as survivor — should be `not p.is_volatile` to prefer the confirmed-MAC peer
-  - Remove the `print("Check this as it might be broken")` debug statements
+- [x] **Fix `_resolve_conflict` survivor selection bug**
+  - Was `max(peers, key=lambda p: p.is_volatile)` — picked the *more* volatile peer
+  - Fixed to `min(peers, key=lambda p: (p.is_volatile, -p.scan_count))` — prefers confirmed-MAC peer, breaks ties by scan count
+  - Removed debug `print()` statements
 
-- [ ] **Replace `print()` with `logging` throughout**
-  - `peer_store.py`: `save()` and `load()` both call `print()` alongside `logging.info()`
-  - `agent.py`: `investigate_all()`, `investigate()` use `print()` for progress output
-  - `comparator.py`: `print_report()` writes directly to stdout — should be `logging.info` so output goes to the daemon log file
+- [x] **Replace `print()` with `logging` throughout**
+  - `peer_store.py`: `save()` and `load()` print calls removed
+  - `agent.py`: `investigate_all()`, `investigate()`, report path all use `logging.info`
+  - `comparator.py`: `print_report()` builds a string and calls `logging.info` so output lands in the daemon log
 
-- [ ] **Graceful Ollama fallback**
-  - If Ollama is unreachable, `SuspiciousAgent` logs a warning but the investigation silently returns the fallback `AgentDecision`
-  - Add a rule-based severity assignment as explicit fallback: score ≥ 7 → high, ≥ 4 → medium, else low
-  - Log clearly when fallback is active so operators know LLM analysis is degraded
+- [x] **Graceful Ollama fallback**
+  - `_rule_based_fallback()` in `SuspiciousAgent`: score ≥ 7 → high, ≥ 4 → medium, else low
+  - Picks scan recommendations from fired event types (traceroute if route/TTL events, tcpdump if ARP/TTL)
+  - Explanation prefixed with `[Rule-based fallback — LLM unavailable]` so operators know LLM is degraded
 
 ---
 

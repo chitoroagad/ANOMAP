@@ -282,7 +282,6 @@ class PeerStore:
         with open(path, "w") as f:
             json.dump(snapshot, f, indent=2, default=str)
         logging.info("PeerStore saved: %d peers → %s", len(self.peers), path)
-        print(f"PeerStore saved: {len(self.peers)} peers → {path}")
 
     @classmethod
     def load(cls, path: str | Path, config: PeerWatchConfig | None = None) -> "PeerStore":
@@ -329,10 +328,6 @@ class PeerStore:
             len(store.peers),
             len(store.ingested_scan_files),
             path,
-        )
-        print(
-            f"PeerStore loaded: {len(store.peers)} peers, "
-            f"{len(store.ingested_scan_files)} previously ingested files."
         )
         return store
 
@@ -818,24 +813,27 @@ class PeerStore:
         ips: set[str],
         data: NormalisedData,
     ) -> Peer:
-        # Choose highest confidence peer as survivor
+        # Prefer the confirmed-MAC (non-volatile) peer as survivor; fall back to
+        # the peer with the highest scan count for stability.
         peers = [self.peers[i] for i in candidate_ids]
-        survivor = max(peers, key=lambda p: p.is_volatile)
-        print(f"conflicting peers: {peers}")
-        print("Check this as it might be broken")
+        survivor = min(peers, key=lambda p: (p.is_volatile, -p.scan_count))
 
         survivor.suspicion_score += 1
         survivor.record_event(
             "identity_conflict_detected", conflicting_peers=list(candidate_ids)
         )
-        logging.warning(f"Identity conflict detected; survivor={survivor.internal_id}")
+        logging.warning(
+            "Identity conflict detected; survivor=%s (volatile=%s, scans=%d)",
+            survivor.internal_id,
+            survivor.is_volatile,
+            survivor.scan_count,
+        )
 
         for peer in peers:
             if peer.internal_id == survivor.internal_id:
                 continue
             self._merge_peers(survivor, peer)
 
-        print(f"Resolving conflict between {peers}")
         self._update_peer(survivor, mac, ips, data)
         return survivor
 

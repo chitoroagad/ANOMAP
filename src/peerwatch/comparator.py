@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import datetime
 
@@ -51,18 +52,21 @@ class Comparator:
     def print_report(self) -> None:
         summaries = self.summarise()
         width = 80
-        print(f"\n{'=' * width}")
-        print(f"Temporal Drift Report  ({len(summaries)} peers)")
-        print(f"{'=' * width}")
+        lines = [
+            "",
+            "=" * width,
+            f"Temporal Drift Report  ({len(summaries)} peers)",
+            "=" * width,
+        ]
         for s in summaries:
             label = s.mac_address or "volatile/no-mac"
             ips = ", ".join(s.ips) if s.ips else "no IP"
-            print(f"\n  {label}  [{ips}]")
-            print(f"  scans={s.scan_count}  suspicion={s.suspicion_score}")
+            lines.append(f"  {label}  [{ips}]")
+            lines.append(f"  scans={s.scan_count}  suspicion={s.suspicion_score}")
             notable = {k: v for k, v in s.event_counts.items() if k != "peer_created"}
             if notable:
                 for event, count in sorted(notable.items()):
-                    print(f"    {event}: {count}x")
+                    lines.append(f"    {event}: {count}x")
             else:
-                print("    (no anomalies recorded)")
-        print()
+                lines.append("    (no anomalies recorded)")
+        logging.info("\n".join(lines))
