@@ -160,6 +160,9 @@ class PeerStore:
         self._cfg = config if config is not None else PeerWatchConfig()
         # Basenames of scan files already ingested — used to skip re-ingest on reload.
         self.ingested_scan_files: set[str] = set()
+        # Timestamp of the previous tick's end — used by FleetCorrelator as event
+        # window start. None on first tick (no window to compare against).
+        self.last_tick_at: datetime | None = None
 
     # --------------------
     # Public API
@@ -211,6 +214,19 @@ class PeerStore:
             self.mac_to_id = {}
             self.ip_to_id = {}
 
+    def add_suspicion(self, peer_id: str, delta: float, reason: str = "") -> None:
+        """Add *delta* to the suspicion score of *peer_id* and record an event.
+
+        Used by FleetCorrelator to apply fleet-pattern boosts after per-peer
+        ingestion is complete. No-ops silently if the peer_id is unknown.
+        """
+        peer = self.peers.get(peer_id)
+        if peer is None:
+            return
+        with self._lock:
+            peer.suspicion_score += delta
+            peer.record_event("fleet_correlation_boost", delta=delta, reason=reason)
+
     def evict_stale_volatile_peers(self, now: datetime | None = None) -> list[str]:
         """Remove volatile (MAC-less) peers not seen within VOLATILE_PEER_TTL_HOURS.
 
@@ -256,6 +272,7 @@ class PeerStore:
             snapshot = {
                 "version": self._SNAPSHOT_VERSION,
                 "saved_at": datetime.now(timezone.utc).isoformat(),
+                "last_tick_at": self.last_tick_at.isoformat() if self.last_tick_at else None,
                 "ingested_scan_files": sorted(self.ingested_scan_files),
                 "peers": {
                     pid: peer.model_dump(mode="json")
@@ -301,6 +318,12 @@ class PeerStore:
             for ip in peer.ips:
                 store.ip_to_id[ip] = pid
         store.ingested_scan_files = set(snapshot.get("ingested_scan_files", []))
+        raw_tick = snapshot.get("last_tick_at")
+        if raw_tick:
+            try:
+                store.last_tick_at = datetime.fromisoformat(raw_tick)
+            except ValueError:
+                pass
         logging.info(
             "PeerStore loaded: %d peers, %d ingested files ← %s",
             len(store.peers),

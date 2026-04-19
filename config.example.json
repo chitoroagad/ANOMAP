@@ -23,6 +23,15 @@
   "baseline_min_scans": 5,
   "volatile_peer_ttl_hours": 24,
 
+  "fleet_min_window_seconds": 300,
+  "fleet_arp_min_peers": 2,
+  "fleet_route_min_peers": 3,
+  "fleet_os_min_peers": 3,
+  "fleet_identity_min_peers": 2,
+  "fleet_service_min_peers": 4,
+  "fleet_ttl_min_peers": 3,
+  "fleet_boost_cap": 4.0,
+
   "suspicion_threshold": 3.0,
   "model": "phi4:latest",
 

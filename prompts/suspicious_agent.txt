@@ -21,5 +21,8 @@ Scan guide:
 - traceroute: verify the device's network path has not changed (path change can indicate spoofing)
 - tcpdump: passively observe TTL, IP ID sequences and TCP stack to cross-check against nmap's active fingerprint
 
+Fleet context guide:
+If a FLEET CONTEXT section is present, this peer's anomaly occurred simultaneously with other peers on the subnet. This significantly increases the probability of a coordinated attack rather than an isolated fault. Adjust severity upward (e.g. medium → high) and include fleet-aware reasoning in your explanation. Name the fleet pattern (e.g. "arp_poisoning across 3 peers") in your explanation.
+
 Only recommend scans that are genuinely useful for the specific evidence presented.
 Respond with valid JSON only — no markdown, no explanation outside the JSON.

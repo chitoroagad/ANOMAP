@@ -10,6 +10,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
+from peerwatch.fleet_correlator import FleetEvent
 from peerwatch.parser import NmapParser
 from peerwatch.peer_store import Peer, PeerStore
 
@@ -82,8 +83,11 @@ class SuspiciousAgent:
     # Public API
     # --------------------
 
-    def investigate_all(self) -> list[InvestigationReport]:
+    def investigate_all(
+        self, fleet_events: list[FleetEvent] | None = None
+    ) -> list[InvestigationReport]:
         """Run investigation on every peer above the suspicion threshold."""
+        fleet_events = fleet_events or []
         suspicious = [
             p
             for p in self.peer_store.peers.values()
@@ -91,16 +95,28 @@ class SuspiciousAgent:
         ]
         if not suspicious:
             print("No suspicious peers found.")
-        return [self.investigate(peer) for peer in suspicious]
 
-    def investigate(self, peer: Peer) -> InvestigationReport:
+        # Build per-peer fleet context lookup.
+        peer_fleet: dict[str, list[FleetEvent]] = {}
+        for fe in fleet_events:
+            for pid in fe.peer_ids:
+                peer_fleet.setdefault(pid, []).append(fe)
+
+        return [
+            self.investigate(peer, fleet_context=peer_fleet.get(peer.internal_id))
+            for peer in suspicious
+        ]
+
+    def investigate(
+        self, peer: Peer, fleet_context: list[FleetEvent] | None = None
+    ) -> InvestigationReport:
         """Full investigation pipeline for a single peer."""
         print(
             f"Investigating peer {peer.mac_address or peer.internal_id[:8]} "
             f"(score={peer.suspicion_score:.1f})"
         )
 
-        decision = self._analyse(peer)
+        decision = self._analyse(peer, fleet_context=fleet_context)
 
         # Always run cryptographic identity checks for peers with SSH/HTTPS ports
         # open — these catch service-mimicry evasion that LLM may not know to request.
@@ -129,8 +145,10 @@ class SuspiciousAgent:
     # LLM analysis
     # --------------------
 
-    def _analyse(self, peer: Peer) -> AgentDecision:
-        context = self._format_peer_context(peer)
+    def _analyse(
+        self, peer: Peer, fleet_context: list[FleetEvent] | None = None
+    ) -> AgentDecision:
+        context = self._format_peer_context(peer, fleet_context=fleet_context)
         messages = [
             SystemMessage(content=_ANALYSIS_SYSTEM_PROMPT),
             HumanMessage(content=context),
@@ -159,7 +177,9 @@ class SuspiciousAgent:
                 recommended_actions=["Review peer event history manually"],
             )
 
-    def _format_peer_context(self, peer: Peer) -> str:
+    def _format_peer_context(
+        self, peer: Peer, fleet_context: list[FleetEvent] | None = None
+    ) -> str:
         known_svc_lines = "\n".join(
             f"  port {port}: {', '.join(sorted(svcs))}"
             for port, svcs in sorted(peer.known_services.items())
@@ -169,6 +189,30 @@ class SuspiciousAgent:
             for e in peer.identity_history
         )
         m = peer.metadata
+
+        fleet_section = ""
+        if fleet_context:
+            lines = ["", "FLEET CONTEXT", "-------------"]
+            for fe in fleet_context:
+                peer_count = len(fe.peer_ids)
+                other_ips = [ip for ip in fe.ips if ip not in peer.ips]
+                lines.append(f"Pattern: {fe.pattern}")
+                lines.append(
+                    f"Affected peers: {peer_count} "
+                    f"({', '.join(fe.ips[:6])}{'...' if len(fe.ips) > 6 else ''})"
+                )
+                lines.append(
+                    f"Window: {fe.window_start.strftime('%H:%M:%SZ')} – "
+                    f"{fe.window_end.strftime('%H:%M:%SZ')}"
+                )
+                lines.append(
+                    f"This peer's events occurred in the same scan window as "
+                    f"{peer_count - 1} other peer(s) that fired the same anomaly "
+                    f"type. Consider coordinated attack."
+                )
+                lines.append("")
+            fleet_section = "\n".join(lines)
+
         return (
             f"MAC: {peer.mac_address or 'unknown'}\n"
             f"IPs: {', '.join(sorted(peer.ips))}\n"
@@ -182,6 +226,7 @@ class SuspiciousAgent:
             f"  Services: {dict(m.services)}\n"
             f"\nAll service types ever seen per port:\n{known_svc_lines or '  (none)'}\n"
             f"\nEvent history:\n{event_lines or '  (none)'}"
+            f"{fleet_section}"
         )
 
     # --------------------

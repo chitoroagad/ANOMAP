@@ -82,9 +82,13 @@
   - Returns structured `AgentDecision` (severity, explanation, recommended scans); executes scans; writes JSON report to `reports/`
   - Prompt in `prompts/suspicious_agent.txt`; wired into `main.py` via `agent.investigate_all()`
 
-<!-- - [ ] **Correlation across peers** -->
-<!--   - If multiple peers show simultaneous fingerprint shifts, it may indicate a network event, not spoofing -->
-<!--   - Fleet-level anomaly grouping to reduce false positives -->
+- [x] **Correlation across peers**
+  - `FleetCorrelator` detects coordinated attacks across multiple peers in one scan tick
+  - 6 named patterns: `arp_poisoning`, `route_shift`, `os_normalisation`, `identity_sweep`, `service_sweep`, `ttl_shift`
+  - Applies configurable suspicion boosts (capped at `fleet_boost_cap`) and records `fleet_correlation_boost` events
+  - Fleet context injected into LLM prompt so agent can reason about coordinated attacks
+  - `alerts/fleet_alerts.jsonl` — separate audit trail for fleet events
+  - 7 simulation tests covering F1–F4 attack scenarios, below-threshold guard, boost cap, and first-tick no-op
 
 - [x] **MAC spoofing detection**
   - `VENDOR_OS_COMPATIBILITY` maps constrained vendor keywords (Apple, Raspberry Pi, Microsoft…) to expected OS families
@@ -122,22 +126,75 @@
   - All peer state persists: suspicion scores, known_services, TTL baselines, SSH/SSL anchors, identity history
   - `ingested_scan_files` set prevents double-ingest on reload
 
-- [ ] **Daemon / scheduler**
-  - Run nmap scans on a configurable interval automatically
-  - Queue new scan results without blocking
+- [x] **Daemon / scheduler**
+  - `daemon.py` runs nmap on a configurable interval (`scan_interval_minutes`)
+  - Injection demo path: drop crafted XML into `data/raw/`, picked up on next tick
+  - Graceful SIGINT/SIGTERM shutdown
 
-- [ ] **Alert output**
-  - Currently just prints to stdout
-  - Add structured alert output: JSON log, syslog, or webhook
+- [x] **Alert output**
+  - `alerts/alerts.jsonl` — one JSON record per alert (ts, peer_id, ip, mac, score, severity, events, explanation, recommended_actions)
 
-- [ ] **Config file**
-  - Hardcoded thresholds and suspicion increments should be configurable
-  - YAML/TOML config for subnet targets, scan interval, alert thresholds
+- [x] **Config file**
+  - `src/peerwatch/config.py` — Pydantic model with all thresholds, weights, and daemon settings
+  - `config.example.json` documents every field with defaults
 
-- [ ] **Scan rate limiting**
-  - Overly frequent nmap scans can disrupt network operations
-  - Enforce minimum scan intervals and warn when targets are outside local subnet
+- [x] **Scan rate limiting**
+  - `min_scan_interval_minutes` enforced in daemon main loop
+  - RFC 1918 check warns (with 5 s abort window) if subnet is public
 
-# Further Ideas
-- [ ] Look into a computer hijacking another connected computer's connection to gain access to network
-- [ ] Create features out of scanned RTTs and compare them across time
+---
+
+## Phase 6 — Thesis Writing (highest priority)
+
+- [ ] **Write the thesis**
+  - Abstract, introduction, related work, methodology, evaluation, conclusion — all placeholder/empty
+  - Core argument to make: structured fingerprint comparison + passive capture + fleet correlation + LLM explanation outperforms simple ARP monitoring (arpwatch)
+  - Sections needed: motivation, architecture overview, detection pipeline (Phases 1–3), fleet correlation, evaluation, limitations, future work
+
+- [ ] **Real-world evaluation on live traffic**
+  - Run daemon against an actual home/lab network for several hours with known-clean devices
+  - Record false positive rate — simulation F1=1.00 says nothing about clean-traffic FPR
+  - Document what the tool produces on normal traffic to answer the inevitable reviewer question
+
+- [ ] **Comparison against existing tools**
+  - arpwatch: detects MAC-IP mapping changes only — no OS/service/route/TTL signals
+  - Show at least one attack scenario (e.g. scenario A ARP poisoning) that both tools catch, and one (e.g. scenario B service backdoor) that only PeerWatch catches
+  - Framing: PeerWatch adds multi-layer evidence accumulation; arpwatch is single-signal
+
+- [ ] **Document known detection limits**
+  - Scenario E (OS fingerprint spoofing below threshold): by design, single-signal below 3.0 is not flagged
+  - Scenario I (service mimicry): not detected — attacker mirrors exact service fingerprint, structured comparison has no signal
+  - Fleet correlation for scenario D: cross-device conflict needs Phase 2 passive data to reach threshold in isolation; fleet boost helps when multiple peers are targeted
+
+---
+
+## Phase 7 — Code Quality
+
+- [ ] **Fix `_resolve_conflict` survivor selection bug**
+  - `peer_store.py` line ~824: `max(peers, key=lambda p: p.is_volatile)` picks the *more* volatile peer as survivor — should be `not p.is_volatile` to prefer the confirmed-MAC peer
+  - Remove the `print("Check this as it might be broken")` debug statements
+
+- [ ] **Replace `print()` with `logging` throughout**
+  - `peer_store.py`: `save()` and `load()` both call `print()` alongside `logging.info()`
+  - `agent.py`: `investigate_all()`, `investigate()` use `print()` for progress output
+  - `comparator.py`: `print_report()` writes directly to stdout — should be `logging.info` so output goes to the daemon log file
+
+- [ ] **Graceful Ollama fallback**
+  - If Ollama is unreachable, `SuspiciousAgent` logs a warning but the investigation silently returns the fallback `AgentDecision`
+  - Add a rule-based severity assignment as explicit fallback: score ≥ 7 → high, ≥ 4 → medium, else low
+  - Log clearly when fallback is active so operators know LLM analysis is degraded
+
+---
+
+## Phase 8 — Detection Improvements
+
+- [ ] **DHCP fingerprinting**
+  - DHCP option order and the set of requested options are OS-specific signatures independent of TCP/IP stack
+  - Add `ingest_dhcp_observation(ip, option_order, requested_params)` to `PeerStore`
+  - Infer OS from DHCP fingerprint (use fingerbank or a small local table); cross-reference with nmap OS
+  - Mismatch adds ~+2.0 suspicion — same weight as TCP fingerprint mismatch
+  - Requires passive capture (scapy filter: `port 67 or port 68`)
+
+- [ ] **Fleet simulation coverage for scenario D**
+  - Scenario D (cross-device identity conflict) currently scores ≥ 1.0 — below the 3.0 threshold
+  - Add a fleet simulation test that drives two peers into identity conflict simultaneously and verifies `identity_sweep` fires and boosts both peers above threshold

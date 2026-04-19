@@ -32,6 +32,7 @@ from peerwatch import NmapParser
 from peerwatch.agent import InvestigationReport, SuspiciousAgent
 from peerwatch.comparator import Comparator
 from peerwatch.config import load_config
+from peerwatch.fleet_correlator import FleetCorrelator, FleetEvent
 from peerwatch.peer_store import PeerStore
 from peerwatch.remediation import Remediator
 
@@ -39,6 +40,7 @@ PEER_STORE_PATH = Path("data/peer_store.json")
 RAW_DIR = Path("data/raw")
 PROCESSED_DIR = Path("data/processed")
 ALERTS_PATH = Path("alerts/alerts.jsonl")
+FLEET_ALERTS_PATH = Path("alerts/fleet_alerts.jsonl")
 BLOCKS_PATH = Path("blocks/blocks.jsonl")
 
 _STRIP_FIELDS = {
@@ -168,6 +170,32 @@ def write_alert(
 
 
 # ---------------------------------------------------------------------------
+# Fleet alert output
+# ---------------------------------------------------------------------------
+
+def write_fleet_alert(fleet_event: FleetEvent, fleet_alerts_path: Path) -> None:
+    """Append a one-line JSON fleet alert record to alerts/fleet_alerts.jsonl."""
+    fleet_alerts_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": fleet_event.window_end.isoformat(),
+        "pattern": fleet_event.pattern,
+        "peer_ids": fleet_event.peer_ids,
+        "ips": fleet_event.ips,
+        "event_count": fleet_event.event_count,
+        "window_start": fleet_event.window_start.isoformat(),
+        "window_end": fleet_event.window_end.isoformat(),
+        "suspicion_boost": fleet_event.suspicion_boost,
+        "description": fleet_event.description,
+    }
+    with open(fleet_alerts_path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    logging.warning(
+        f"FLEET [{fleet_event.pattern.upper()}] "
+        f"{len(fleet_event.peer_ids)} peers — {fleet_event.description}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Detection pipeline (one tick)
 # ---------------------------------------------------------------------------
 
@@ -177,7 +205,7 @@ def run_pipeline(
     alerts_path: Path,
     remediator: Remediator,
 ) -> int:
-    """Ingest new scan files, run comparator + agent + remediation. Returns alert count."""
+    """Ingest new scan files, run comparator + fleet + agent + remediation. Returns alert count."""
     all_files = glob.glob(str(PROCESSED_DIR / "*.json"))
     new_files = [
         f for f in all_files
@@ -197,10 +225,17 @@ def run_pipeline(
 
     Comparator(peer_store).print_report()
 
+    # Fleet correlation — must run after all peers are ingested, before agent.
+    fleet_events = FleetCorrelator(peer_store, cfg).analyse()
+    for fe in fleet_events:
+        write_fleet_alert(fe, FLEET_ALERTS_PATH)
+
     evicted = peer_store.evict_stale_volatile_peers()
     if evicted:
         logging.info(f"Evicted {len(evicted)} stale volatile peer(s)")
 
+    # Stamp tick time before saving so it persists across restarts.
+    peer_store.last_tick_at = datetime.now(timezone.utc)
     peer_store.save(PEER_STORE_PATH)
 
     agent = SuspiciousAgent(
@@ -209,7 +244,7 @@ def run_pipeline(
         model=cfg.model,
         threshold=cfg.suspicion_threshold,
     )
-    reports = agent.investigate_all()
+    reports = agent.investigate_all(fleet_events=fleet_events)
 
     for report in reports:
         write_alert(report, peer_store, alerts_path)

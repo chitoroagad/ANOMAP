@@ -100,6 +100,40 @@ class PeerWatchConfig(BaseModel):
         description="Score added when SSL/TLS certificate fingerprint changes on a known port",
     )
 
+    # --- Fleet correlation ---
+    fleet_min_window_seconds: int = Field(
+        default=300,
+        description="Maximum age (seconds) of an event to be included in fleet correlation",
+    )
+    fleet_arp_min_peers: int = Field(
+        default=2,
+        description="Minimum peers with arp_spoofing_detected to fire arp_poisoning pattern",
+    )
+    fleet_route_min_peers: int = Field(
+        default=3,
+        description="Minimum peers with route_changed to fire route_shift pattern",
+    )
+    fleet_os_min_peers: int = Field(
+        default=3,
+        description="Minimum peers with os_family_changed to fire os_normalisation pattern",
+    )
+    fleet_identity_min_peers: int = Field(
+        default=2,
+        description="Minimum peers with identity events to fire identity_sweep pattern",
+    )
+    fleet_service_min_peers: int = Field(
+        default=4,
+        description="Minimum peers with service_type_changed to fire service_sweep pattern",
+    )
+    fleet_ttl_min_peers: int = Field(
+        default=3,
+        description="Minimum peers with ttl_deviation to fire ttl_shift pattern",
+    )
+    fleet_boost_cap: float = Field(
+        default=4.0,
+        description="Maximum total fleet suspicion boost per peer per tick",
+    )
+
     # --- Agent ---
     suspicion_threshold: float = Field(
         default=3.0,
