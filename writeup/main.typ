@@ -1,302 +1,188 @@
-#import "template/template.typ": *
+#import "ucl-title.typ": ucl-title-page
 
+// ── UCL title page ─────────────────────────────────────────────────────────────
+#set page(
+  paper: "a4",
+  margin: (x: 2.5cm, top: 3cm, bottom: 3cm),
+  numbering: none,
+  header: none,
+  footer: none,
+)
+
+#ucl-title-page(
+  logo-path: "ucl_logo.png",
+  title: "PeerWatch: Multi-Signal Network Anomaly Detection for Local Area Networks",
+  subtitle: none,
+  date: "TODO: Day Month Year",
+  author: "Darius Chitoroaga",
+  degree: "MEng Computer Science",
+  supervisor: "TODO: Supervisor's Name",
+  distribution: "open",
+)
+
+#pagebreak()
+
+// ── Paper body ─────────────────────────────────────────────────────────────────
+#set page(
+  paper: "a4",
+  margin: (x: 2cm, top: 2.5cm, bottom: 2.5cm),
+  numbering: "1",
+  header: context {
+    set text(size: 8pt)
+    if counter(page).get().first() > 1 [
+      #grid(
+        columns: (1fr, 1fr),
+        align(left)[Chitoroaga — PeerWatch],
+        align(right)[UCL MEng Computer Science],
+      )
+      #line(length: 100%, stroke: 0.4pt + gray)
+    ]
+  },
+  footer: context {
+    set text(size: 8pt)
+    align(center)[#counter(page).display("1")]
+  },
+)
+
+#set text(font: "Linux Libertine O", size: 10pt, lang: "en")
+#set par(justify: true, leading: 0.65em, spacing: 1.2em)
+
+// Heading styles
+#show heading.where(level: 1): it => {
+  v(1.4em, weak: true)
+  set text(size: 11pt, weight: "bold")
+  upper(it)
+  v(0.6em, weak: true)
+}
+#show heading.where(level: 2): it => {
+  v(1.2em, weak: true)
+  set text(size: 10.5pt, weight: "bold")
+  it
+  v(0.4em, weak: true)
+}
+#show heading.where(level: 3): it => {
+  v(0.8em, weak: true)
+  set text(size: 10pt, weight: "bold", style: "italic")
+  it
+  v(0.3em, weak: true)
+}
+
+#set heading(numbering: "1.1.1")
+
+// Table header bold + bottom rule
 #show table.cell.where(y: 0): strong
 #set table(
-  stroke: (x, y) => if y == 0 {
-    (bottom: 0.7pt + black)
-  },
+  stroke: (x, y) => if y == 0 { (bottom: 0.7pt + black) },
 )
 
-#let title = [
+// ── Abstract (full width before columns) ───────────────────────────────────────
+#block(
+  width: 100%,
+  inset: (x: 1.5em, y: 0.8em),
+  stroke: (left: 2pt + black),
+  fill: luma(248),
+)[
+  #text(weight: "bold")[Abstract — ]
+  // TODO: Write abstract last. Required: problem statement, approach, main result (TPR/FPR numbers), conclusion.
 ]
-#let authors = (
-  (
-    // Should I use string or content? It doesn't matter
-    name: "Darius Chitoroaga",
-    email: "darius.chitoroaga@pm.me",
-    affiliation: (
-      department: [Department of Computer Science],
-      institution: [University College London],
-      country: "United Kingdom",
-    ),
-    orcid: "0000-0000-0000-0000",
-    // mark: super(sym.suit.diamond),
-  ),
-)
 
-#let conference = (
-  name: [ACM TOG],
-  // short: [SOSP ’25],
-  // year: [2025],
-  // date: [October 13–16],
-  // venue: [Seoul, Republic of Korea],
-)
-// #let ccs = (
-//   (
-//     generic: [Software and its engineering],
-//     specific: ([Virtual machines], [Virtual memory]),
-//   ),
-//   (
-//     generic: [Computer systems organization],
-//     specific: ([Heterogeneous (hybrid) systems],),
-//   ),
-// )
+#v(1em)
 
-#show: acmart.with(
-  format: "acmsmall",
-  title: "A Tool to Detect IP Spoofing for System Admins",
-  authors: {
-    (
-      (
-        name: "Darius Chitoroaga",
-        email: "darius.chitoroaga.22@ucl.ac.uk",
-        orcid: "0000-0000-0000-0000",
-        affiliation: (
-          institution: "University College London",
-          city: "London",
-          country: "United Kingdom",
-        ),
-      ),
-    )
-  },
-  shortauthors: "Chitoroaga et al.",
-  // control max number of columns for authors and affiliation
-  // conference: conference,
-  copyright: none,
-  // Set review to submission ID for the review process or to "none" for the final version.
-  // review: [\#001],
-  acmJournal: "JACM",
-  acmVolume: 37,
-  acmNumber: 4,
-  acmArticle: 111,
-  acmMonth: 8,
-  acmYear: 2025,
-)
+// ── Two-column body ────────────────────────────────────────────────────────────
+#columns(2, gutter: 1.5em)[
 
+  = Introduction
 
-= Abstract
-#lorem(15)
-// The process of scientific writing is often tangled up with the intricacies of typesetting, leading to frustration and wasted time for researchers. In this paper, we introduce Typst, a new typesetting system designed specifically for scientific writing.
-// Typst untangles the typesetting process, allowing researchers to compose papers faster. In a series of experiments we demonstrate that Typst offers several advantages, including faster document creation, simplified syntax, and increased ease-of-use.
+  Local area networks are built on protocols that were designed for trusted environments.
+  The Address Resolution Protocol (ARP), which maps IP addresses to MAC addresses on a
+  subnet, carries no authentication mechanism: any host can broadcast an ARP reply claiming
+  any IP-to-MAC binding it chooses @rfc826.
+  An attacker with access to a local network can therefore impersonate another device
+  silently, redirecting traffic through a machine they control — a man-in-the-middle (MitM)
+  attack that enables credential theft, session hijacking, and traffic inspection without
+  any indication to the victim or the network administrator @arpspoofing.
 
-// #acmart-ccs(ccs)
-// #acmart-keywords(keywords)
-// #acmart-ref(to-string(title), authors, conference, doi)
+  The standard hardware-enforced defences against ARP spoofing — Dynamic ARP Inspection
+  (DAI) and DHCP snooping — require managed layer-2 switches that maintain a trusted
+  binding table @dai.
+  These features are absent from commodity home and small-office routers, the same
+  environments where monitoring is often most needed and least configured.
+  Software-based tools such as arpwatch @arpwatch fill this gap by passively observing ARP
+  traffic and alerting when a MAC-to-IP mapping changes.
+  However, arpwatch and similar tools operate on a single signal: the ARP binding.
+  An attacker who does not forge ARP replies — for example, one who exploits a compromised
+  device, replaces a physical device, or gradually migrates a service to a new host — is
+  invisible to ARP-only monitors.
 
-= Introduction
-We aim to create a multi-tool for monitoring subnets for IP spoofing using Machine Learning techniques.
+  A more robust approach is to treat device identity as a composite of many independent
+  signals: the operating system inferred from TCP/IP stack behaviour, the set of open ports,
+  the services running on those ports, the time-to-live (TTL) of outgoing packets, the
+  route traffic takes through the network, and the cryptographic identity anchors that
+  high-value services such as SSH and TLS expose.
+  Significant drift in any of these signals, or the co-occurrence of smaller drifts across
+  signals, indicates that the device behind an IP address may not be the device that was
+  previously observed there.
+  When the same anomaly pattern appears simultaneously across multiple devices on the subnet,
+  the probability of a coordinated attack — rather than a routine configuration change —
+  rises substantially.
+  No lightweight, locally-deployable tool currently integrates all of these signals or
+  performs fleet-level co-occurrence analysis.
 
-== Investigation
+  This paper presents *PeerWatch*, a daemon that implements multi-signal device fingerprint
+  accumulation for LAN spoofing detection.
+  PeerWatch runs periodically on a single monitoring host, performs active nmap scans of
+  the subnet @nmap, maintains a persistent identity store for each discovered device, and
+  scores incoming scan results against the stored baseline.
+  A passive packet capture layer supplements the active scan with TTL consistency checks,
+  ARP reply monitoring, TCP stack fingerprinting, and IP ID sequence analysis @p0f.
+  A fleet correlator runs each tick to identify patterns where multiple peers exhibit the
+  same anomaly simultaneously; such co-occurrence adds a configurable suspicion boost and
+  is reported to the operator in a dedicated alert log.
+  When a device's accumulated suspicion score crosses a configurable threshold, a
+  locally-run large language model produces a structured natural-language triage of the
+  evidence, reducing the cognitive load on the operator who must decide whether to
+  investigate further @alertfatigue.
 
-=== Data Sources
-The most important part of any ML solution is having good data.
-What we have been looking for is RTT and port scan data from a normally operating subnet using `nmap`.
+  The contributions of this work are:
 
-_We could also use traceroutes, maybe..._
+  + *A multi-signal device fingerprinting system* that integrates active nmap scan
+    comparison (OS family, port Jaccard similarity, per-port service type, protocol
+    mismatches), passive packet observation (TTL baseline, ARP monitoring, TCP fingerprint,
+    IP ID sequence, route path stability), and cryptographic identity anchors (SSH host key
+    and TLS certificate fingerprint tracking).
 
-However, this only allows us to use unsupervised ML methods since we have no labelled data, only normal operations.
-To use supervised ML methods we would need to have accurately labelled data, which is where we run into some issues.
-- Security attacks are always evolving and adapting, therefore is we have data that we 'know' is spoofed, attackers could use
-different methods in the future that do not have the same signature on the network and therefore completely bypass our
-models.
-- Further, to get data that is spoofed we would need to simulate known spoofing methods which are likely not in
-use since they are known.
-- To create a simulation of a normally operating subnet is not trivial and would require significant development.
+  + *A fleet-level co-occurrence detector* that identifies coordinated attack patterns —
+    such as simultaneous ARP poisoning of multiple peers or a subnet-wide route shift —
+    that are missed or under-scored by per-device analysis alone.
 
-Therefore, for the moment, we have decided to focus solely on unsupervised methods.
+  + *An empirical evaluation* across nine simulated attack scenarios drawn from MITRE
+    ATT&CK and CVE-documented techniques, comparing Phase 1 (active scan only), Phase 2
+    (active + passive), and Phase 3 (all signals + fleet correlation) against an arpwatch
+    baseline, together with a clean-traffic false positive measurement.
+  // NOTE: Fill in final TPR/FPR numbers once benchmark runs are complete.
 
-Now we run into ethical issues:
-- Continuous pinging and port scanning is considered unethical since it produces a fairly large load on the target
-subnet, using up resources.
-- These types of ping are also usually associated with cyberattacks and therefore would rightfully cause stress for
-the admin of the target subnet.
+  We do not claim real-time packet-rate detection, protection against a sophisticated
+  attacker who can exactly mirror the target device's full fingerprint (Scenario I), or
+  suitability for subnets larger than a few hundred hosts without parallelism.
+  The detection pipeline is entirely rule-based and deterministic; the LLM component
+  provides structured explanation of fired alerts and does not participate in the detection
+  decision.
+  All scoring logic is transparent and configurable, and the system is designed to run
+  without cloud dependencies on hardware a home or small-office administrator already owns.
 
-Therefore, we should only ping on approved subnets:
-- Home networks on a router that we own.
-- Research resources that allow researchers to gather data of this type.
-Or precompiled datasets, though these may be out of date.
+  The remainder of this paper is structured as follows.
+  // NOTE: Fill in section order once all sections are drafted.
 
-==== Home Subnets
-We have gathered half a days worth of pings on a home network but this is may not be very useful since
-there are at most 8 devices every connected to the subnet.
+  #bibliography(
+    "refs.bib",
+    title: "References",
+    style: "association-for-computing-machinery",
+  )
 
+  #colbreak(weak: true)
+  #set heading(numbering: "A.a.a")
 
-==== External Sources
-/ #link(
-    "https://peering.ee.columbia.edu/",
-  )[PEERING]: A system that provides safe and easy
-access for researchers and educators to the Internet's BGP routing system. However, it is against their terms of use to
-regularly ping using something like `nmap`.
-/ #link(
-    "https://search.censys.io/",
-  )[Censys]: A platform that provides real-time intelligence about the whole internet.
-Requires deeper dive into what kind of data we can access.
-/ #link(
-    "https://www.shodan.io/",
-  )[Shodan]: Very similar to Censys, but with more focus on IoT. Calls itself
-the "Search Engine for the Internet of Everything".
-/ #link(
-    "https://www.shadowserver.org/",
-  )[Shadowserver]: This foundation provides free daily reports and
-datasets on open services and vulnerabilities.
-/ #link(
-    "https://atlas.ripe.net/",
-  )[RIPE Atlas]: This service allows researchers to schedule `ping`s and `traceroutes` to
-volunteer devices worldwide but does not allow the use of tools like `nmap` or anything that looks like an attack
-or scan.
+  = Artifact Appendix
+  In this section we show how to reproduce our findings.
 
-=== Wake-on-LAN
-A networking standard that allows a computer to be remotely powered on or awakened from a low-power state,
-using a specially crafted "magic packet".
-This technology operates on the link layer so functions separately from IP addresses and relies on the
-devices' MAC address.
-
-For WoL to work the Network Interface Controller (NIC) must remain powered on during low-power states.
-This feature must be enabled from the BIOS/UEFI settings on the device.
-
-
-=== Detecting Devices Connected Through an Authorised Device
-Tracking computers connected through another device is difficult because the "gateway" device is designed to hide them.
-However, `nmap` provides specific features that can detect "leakage" from hidden devices by analysing packet headers.
-
-==== IP ID Sequence Analysis (`-O` `-v`)
-This is the most reliable method for detecting multiple devices behind a single IP.
-Every device generates IP packets with a unique ID number.
-Most operating systems increment this number for every packet they send.
-
-If multiple devices are sharing one IP connection, their IP IDs will interleave or show gaps, confusing Nmap's detection engine.
-
-
-==== TTL Analysis
-If scanning a single IP gives packets with different TTLs it is a strong indicator that there is a router forwarding traffic.
-
-==== The `ipidseq` Script
-Nmap has a dedicated script specifically designed to classify the IP ID generation method, which helps
-in identifying these "zombie" hosts or NATed environments
-
-==== Inconsistent OS Fingerprints
-When you run OS detection against a NATed IP, Nmap receives responses from potentially different devices on different ports.
-Port 80 might be forwarded to a Linux server (TTL 64), while Port 3389 is forwarded to a Windows box (TTL 128).
-
-=== Fingerprinting
-==== Decide invariants
-*Stable identity features that shouldn't change much*
-- OS family + version (Linux 5.10)
-- Device type hint (rounter/gateway/printer)
-- Vendor from MAC address (Technicolor Delivery Technologies Belgium NV)
-- Typical open ports
-- Typical services per port (nginx on 80/443/8080)
-
-*Volatile features*
-- Uptime
-- Exact TTL
-- Ephemeral ports (49152)
-- Number of closed ports
-
-_Should not let volatile features dominate embeddings_
-
-==== Normalise data into a canonical representation
-Small models need focused data to be useful. Should use a normalised schema such as:
-```json
-{
-  "os": "linux",
-  "os_version": "4.14",
-  "distribution": "openwrt",
-  "device_vendor": "technicolor",
-  "open_ports": [53,80,139,443,445,631,5000,6699,8080,9000,49152],
-  "services": {
-    "53": "dns",
-    "80": "http-nginx",
-    "443": "https-nginx",
-    "8080": "http-nginx",
-    "139": "netbios",
-    "445": "smb",
-    "631": "ipp",
-    "5000": "upnp"
-  },
-  "web_stack": ["nginx"],
-  "smb_exposed": true,
-  "printer_protocol": true,
-  "upnp_exposed": true
-}
-```
-
-==== Create Multiple Embeddings
-Use separate embeddings for different semantic groups.
-This allows us to explain similarity/difference later.
-Also means models don't get overloaded.
-
-#table(
-  columns: 2,
-  table.header([Group], [Purpose]),
-  [OS embedding], [Device class similarity],
-  [Port-set embedding], [Network posture],
-  [Service-stack embedding], [Application exposure],
-)
-
-/ *OS*: `Operating system: OpenWrt 19.07, Linux kernel 4.14, embedded router`
-/ *Ports*: `Open TCP ports: 53, 80, 139, 443, 445, 631, 5000, 6699, 8080, 9000, 49152`
-/ *Services*: `Services detected: DNS, nginx HTTP, nginx HTTPS, SMB, NetBIOS, IPP printing, UPnP`
-
-_Should test which parts should be paired, since could be useful to pair ports and the services running on them._
-
-==== Fingerprinting using similarity
-Networking data is often varied and hosts can change values for any reason, so classifying hosts is
-unlikely to be successful. Therefore, we rely on cosine similarity between embeddings. The similarities
-between different embedding classes can have different weights (OS > ports > services).
-
-==== Catching anomalies
-Use *delta-based scoring* based on an initial baseline for some host.
-i.e. for a certain host the baseline may be:
-- Ports: {53,80,443,139,445,631,5000,8080}
-- Services: nginx, SMB, IPP
-- OS: OpenWrt
-
-*Structural Anomalies*
-- New port appears
-- Service mismatch (`ssh` on 8080)
-- HTTP server changes from nginx to Apache
-
-*Semantic Anomalies*
-- Port profile embedding drifts from baseline
-- Service description no longer matches "router-like" (based on device hint)
-- OS embedding changes family
-
-==== Architecture (Pipeline)
-Nmap #sym.arrow Normalise #sym.arrow Feature Groups #sym.arrow Embeddings #sym.arrow
-
-Similarity vs baseline #sym.arrow Drift / Anomaly score #sym.arrow LLM takes action / summary
-
-= More Ideas
-== Using `tcpdump`:
-- TTL variance per source IP
-- TCP handshake anomalies
-- Inconsisten IP ID behaviour
-
-Spoofing indicators:
-- Same source IP #sym.arrow different TTLs
-- SYNs that never complete handshakes
-- No response to challenge ACKs
-
-_Would probably need to heavily filer the packets that make it to our model._
-
-== Using `traceroute`:
-- Path stability checks
-- Comparing route to claimed source ASN
-
-Indicators:
-- Traceroute path doesn't make sense for source IPs ASN.
-- Same IP #sym.arrow different paths in short time.
-
-
-#bibliography(
-  "refs.bib",
-  title: "References",
-  style: "association-for-computing-machinery",
-)
-
-#colbreak(weak: true)
-#set heading(numbering: "A.a.a")
-
-= Artifact Appendix
-In this section we show how to reproduce our findings.
+] // end columns
