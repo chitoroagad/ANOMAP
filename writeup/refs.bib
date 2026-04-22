@@ -1,63 +1,147 @@
-% ARP protocol specification
 @techreport{rfc826,
-  author      = {Plummer, David C.},
-  title       = {An Ethernet Address Resolution Protocol},
-  institution = {IETF},
-  number      = {RFC 826},
-  year        = {1982},
-  url         = {https://www.rfc-editor.org/rfc/rfc826},
+  author        = {Plummer, David C.},
+  title         = {An Ethernet Address Resolution Protocol},
+  institution   = {IETF},
+  number        = {RFC 826},
+  year          = {1982},
+  url           = {https://www.rfc-editor.org/rfc/rfc826}
 }
-
-% ARP spoofing / MitM attacks on LANs — replace with a concrete academic citation
-% NOTE: find a peer-reviewed paper on ARP MitM (e.g. Ramachandran & Feamster 2005
-%       "Understanding the Network-Level Behavior of Spammers", or a dedicated ARP paper)
-@misc{arpspoofing,
-  author = {TODO},
-  title  = {TODO: cite an ARP spoofing / MitM paper},
-  year   = {000},
-  note   = {Placeholder — see T2a in TODO\_thesis.md},
+@article{arpspoofing,
+  title         = {Man-in-the-Middle Attack to the HTTPS Protocol},
+  author        = {Callegati, Franco and Cerroni, Walter and Ramilli, Marco},
+  journal       = {IEEE Security \& Privacy},
+  volume        = {7},
+  number        = {1},
+  pages         = {78--81},
+  year          = {2009},
+  publisher     = {IEEE}
 }
-
-% Dynamic ARP Inspection / 802.1X
-% NOTE: Cisco white paper or IEEE 802.1X-2010 are the canonical sources
-@misc{dai,
-  author = {TODO},
-  title  = {TODO: cite Dynamic ARP Inspection specification or white paper},
-  year   = {000},
-  note   = {Placeholder — see T2a in TODO\_thesis.md},
+@article{dai,
+  title         = {Implementation And Simulation Of Dynamic Arp Inspection In Cisco Packet Tracer For Network Security},
+  author        = {Putra, Fauzan Prasetyo Eka and Ubaidi, Ubaidi and Tamam, Alief Badrit and Efendi, Reynal Widya},
+  journal       = {Brilliance: Research of Artificial Intelligence},
+  volume        = {4},
+  number        = {1},
+  pages         = {340--347},
+  year          = {2024}
 }
-
 % arpwatch
 @misc{arpwatch,
-  author       = {Leres, Craig and Jacobson, Van},
-  title        = {arpwatch — Ethernet/IP Address Pairings Monitor},
-  year         = {1992},
-  howpublished = {Lawrence Berkeley National Laboratory},
-  url          = {https://ee.lbl.gov/},
+  author        = {Leres, Craig and Jacobson, Van},
+  title         = {arpwatch -- Ethernet/IP Address Pairings Monitor},
+  year          = {1992},
+  howpublished  = {Lawrence Berkeley National Laboratory},
+  url           = {https://ee.lbl.gov/}
 }
-
 % Nmap
 @book{nmap,
-  author    = {Lyon, Gordon Fyodor},
-  title     = {Nmap Network Scanning},
-  year      = {2008},
-  publisher = {Insecure.Com LLC},
-  url       = {https://nmap.org/book/},
+  author        = {Lyon, Gordon Fyodor},
+  title         = {Nmap Network Scanning},
+  year          = {2008},
+  publisher     = {Insecure.Com LLC},
+  url           = {https://nmap.org/book/}
 }
-
 % p0f passive fingerprinter
 @misc{p0f,
-  author       = {Zalewski, Michal},
-  title        = {p0f v3 — Passive OS Fingerprinter},
-  year         = {2012},
-  howpublished = {\url{https://lcamtuf.coredump.cx/p0f3/}},
+  author        = {Zalewski, Michal},
+  title         = {p0f v3 -- Passive OS Fingerprinter},
+  year          = {2012},
+  howpublished  = {\url{https://lcamtuf.coredump.cx/p0f3/}}
+}
+@misc{iotgrowth,
+  author        = {{Cisco Systems}},
+  title         = {Cisco Annual Internet Report (2018--2023) White Paper},
+  year          = {2020},
+  howpublished  = {\url{https://www.cisco.com/c/en/us/solutions/collateral/executive-perspectives/annual-internet-report/white-paper-c11-741490.html}}
+}
+@inproceedings{snort,
+  author    = {Roesch, Martin},
+  title     = {Snort: Lightweight Intrusion Detection for Networks},
+  booktitle = {Proceedings of the 13th USENIX Conference on System Administration (LISA)},
+  year      = {1999},
+  pages     = {229--238}
+}
+@misc{suricata,
+  author        = {{Open Information Security Foundation}},
+  title         = {Suricata Network IDS, IPS and NSM Engine},
+  year          = {2024},
+  howpublished  = {\url{https://suricata.io/}}
+}
+@inproceedings{zeek,
+  author    = {Paxson, Vern},
+  title     = {Bro: A System for Detecting Network Intruders in Real-Time},
+  booktitle = {Proceedings of the 7th USENIX Security Symposium},
+  year      = {1998}
+}
+@misc{ollama,
+  author        = {{Ollama}},
+  title         = {Ollama -- Run Large Language Models Locally},
+  year          = {2024},
+  howpublished  = {\url{https://ollama.com/}}
+}
+@misc{darktrace,
+  author        = {{Darktrace}},
+  title         = {Darktrace Enterprise Immune System},
+  year          = {2024},
+  howpublished  = {\url{https://www.darktrace.com/products/}}
+}
+@misc{ciscosna,
+  author        = {{Cisco Systems}},
+  title         = {Cisco Secure Network Analytics},
+  year          = {2024},
+  howpublished  = {\url{https://www.cisco.com/c/en/us/products/security/stealthwatch/index.html}}
+}
+@misc{pydantic,
+  author        = {Colvin, Samuel and others},
+  title         = {Pydantic --- Data Validation Using Python Type Hints},
+  year          = {2024},
+  howpublished  = {\url{https://docs.pydantic.dev/}}
+}
+@inproceedings{saddns,
+  author    = {Man, Keyu and Qian, Zhiyun and Wang, Zhongjie and Zheng, Xiaofeng and Huang, Youjun},
+  title     = {{DNS} Cache Poisoning Attack: Resurrections with Side Channels},
+  booktitle = {Proceedings of the 2020 ACM SIGSAC Conference on Computer and Communications Security},
+  year      = {2020},
 }
 
-% Alert fatigue in SOC environments
-% NOTE: replace with a concrete citation, e.g. Verizon DBIR or an academic SOC study
-@misc{alertfatigue,
-  author = {TODO},
-  title  = {TODO: cite SOC alert fatigue paper},
-  year   = {000},
-  note   = {Placeholder — see T2d in TODO\_thesis.md},
+@misc{mitre,
+  author       = {{MITRE Corporation}},
+  title        = {{MITRE ATT\&CK} Enterprise Tactics, Techniques and Procedures},
+  year         = {2024},
+  howpublished = {\url{https://attack.mitre.org/}}
+}
+@misc{uscertTA17,
+  author       = {{US-CERT}},
+  title        = {{TA17-181A}: Petya/NotPetya Ransomware},
+  year         = {2017},
+  howpublished = {\url{https://www.cisa.gov/uscert/ncas/alerts/TA17-181A}}
+}
+@misc{regresshion,
+  author       = {{Qualys Threat Research Unit}},
+  title        = {{regreSSHion}: Remote Unauthenticated Code Execution Vulnerability in {OpenSSH} Server ({CVE-2024-6387})},
+  year         = {2024},
+  howpublished = {\url{https://www.qualys.com/2024/07/01/cve-2024-6387/regresshion.txt}}
+}
+@inproceedings{mirai,
+  author    = {Antonakakis, Manos and April, Tim and Bailey, Michael and Bernhard, Matt and
+               Bursztein, Elie and Cochran, Jaime and Durumeric, Zakir and Halderman, J. Alex
+               and Invernizzi, Luca and Kallitsis, Michalis and others},
+  title     = {Understanding the Mirai Botnet},
+  booktitle = {Proceedings of the 26th USENIX Security Symposium},
+  year      = {2017},
+  pages     = {1093--1110}
+}
+@inproceedings{promptinjection,
+  author    = {Greshake, Kai and Abdelnabi, Sahar and Mishra, Shailesh and Endres, Christoph
+               and Holz, Thorsten and Fritz, Mario},
+  title     = {Not What You've Signed Up For: Compromising Real-World {LLM}-Integrated
+               Applications with Indirect Prompt Injection},
+  booktitle = {Proceedings of the 16th ACM Workshop on Artificial Intelligence and Security},
+  year      = {2023}
+}
+@inproceedings{alertfatigue,
+  title         = {Nodoze: Combatting threat alert fatigue with automated provenance triage},
+  author        = {Hassan, Wajih Ul and Guo, Shengjian and Li, Ding and Chen, Zhengzhang and Jee, Kangkook and Li, Zhichun and Bates, Adam},
+  booktitle     = {network and distributed systems security symposium},
+  year          = {2019}
 }
