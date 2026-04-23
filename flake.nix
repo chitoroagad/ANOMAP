@@ -58,6 +58,7 @@
           sortedcontainers
           pytest
           scapy
+          matplotlib
 
           pkgs.nmap
         ];
