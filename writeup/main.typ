@@ -1,4 +1,5 @@
 #import "ucl-title.typ": ucl-title-page
+#import "@preview/fletcher:0.5.7" as fletcher: diagram, edge, node
 
 // ── UCL title page ─────────────────────────────────────────────────────────────
 #set page(
@@ -63,6 +64,8 @@
 #set table(
   stroke: (x, y) => if y == 0 { (bottom: 0.7pt + black) },
 )
+
+#show figure: set block(breakable: true)
 
 // ── Abstract (full width before columns) ───────────────────────────────────────
 #block(
@@ -952,7 +955,7 @@ analyses it into an initial design.
 
 = Requirements and Analysis
 
-== Problem Statement
+== Detailed Problem Statement <problem-statement>
 
 The introduction established that existing tools fail to detect device substitution
 and service-level impersonation attacks on home and small-office networks.
@@ -1038,6 +1041,547 @@ device may take a legitimate service offline.
 The decision to block must be governed by deterministic rule-based guards that LLM
 output cannot override; the model's severity classification may be one guard among
 several, but the guard logic itself must be purely rule-based.
+
+== Requirements
+
+The requirements below are derived directly from the constraints identified in
+@problem-statement.
+Functional requirements specify what the system must do; non-functional requirements
+specify properties the implementation must exhibit.
+Requirements are numbered for traceability: Chapter 4 references them when describing
+design decisions, and Chapter 5 references them when describing test coverage.  // TODO: cross-reference
+
+
+=== Functional Requirements
+
+#figure(
+  table(
+    columns: (auto, 1fr),
+    align: (left, left),
+    [*ID*], [*Requirement*],
+
+    table.hline(stroke: 0pt),
+    table.cell(colspan: 2)[*A — Device Discovery and Identity Tracking*],
+
+    [FR1],
+    [The system shall periodically scan a configurable IPv4 /24 subnet using nmap,
+      discovering active hosts and recording OS family, open TCP/UDP ports, service
+      types, and MAC address per host.],
+
+    [FR2],
+    [Device identity shall be persisted across daemon restarts in a structured store
+      keyed by MAC address; devices that expose no MAC address shall be keyed by IP
+      address.],
+
+    [FR3],
+    [On each scan, the system shall compare each device's current fingerprint against
+      its stored baseline and emit a typed identity event for each detected drift.],
+
+    [FR4],
+    [Each identity event shall carry a configurable numeric weight; the device's
+      suspicion score shall be the weighted sum of accumulated events subject to
+      exponential decay between ticks.],
+
+    [FR5],
+    [The system shall maintain a per-device known-services table; events for service
+      fingerprint changes on ports where oscillation has been previously observed shall
+      be suppressed.],
+
+    [FR6],
+    [Scoring shall be withheld for the first $N$ observations of a newly discovered
+      device (configurable `baseline_min_scans`); events shall be recorded but shall
+      not contribute to the suspicion score during this warmup period.],
+
+    table.hline(stroke: 0pt),
+    table.cell(colspan: 2)[*B — Passive Monitoring*],
+
+    [FR7],
+    [The system shall run a continuous passive packet capture loop in parallel with
+      active scans, monitoring: (a) ARP reply binding conflicts; (b) per-device TTL
+      deviation from an accumulated baseline; (c) TCP stack fingerprint inconsistency;
+      (d) IP identification field counter anomalies.],
+
+    [FR8],
+    [The system shall track route path stability per device via periodic traceroute;
+      each hop shall be attributed to an autonomous system; changes in hop sequence or
+      ASN membership shall emit identity events.],
+
+    [FR9],
+    [The system shall track SSH host key and TLS certificate fingerprints per service
+      port; a change in fingerprint on a previously observed port shall emit an identity
+      event.],
+
+    table.hline(stroke: 0pt),
+    table.cell(colspan: 2)[*C — Fleet Correlation*],
+
+    [FR10],
+    [After each scan tick, the system shall evaluate identity events recorded since
+      the previous tick across all peers; where $≥ N$ peers exhibit the same event
+      class (pattern-dependent threshold), a fleet pattern shall fire and a configurable
+      score boost shall be applied to each matching peer.],
+
+    table.hline(stroke: 0pt),
+    table.cell(colspan: 2)[*D — LLM-Assisted Triage*],
+
+    [FR11],
+    [When a device's suspicion score reaches or exceeds a configurable threshold, the
+      system shall invoke a locally-running LLM via Ollama and request a structured JSON
+      investigation report.],
+
+    [FR12],
+    [The system shall remain fully operational if Ollama is unavailable; a rule-based
+      severity assignment shall be substituted for the LLM report without loss of
+      detection capability.],
+
+    [FR13 <fr13>],
+    [The LLM prompt shall contain only data derived by the detection pipeline: numeric
+      suspicion score, event type labels from a fixed enum, system-assigned device
+      identifiers, and timestamp. Raw packet payloads, device-supplied hostnames, service
+      banners, and any other attacker-reachable strings shall not appear in the prompt.],
+
+    table.hline(stroke: 0pt),
+    table.cell(colspan: 2)[*E — Remediation*],
+
+    [FR14],
+    [The system shall support autonomous remediation via iptables INPUT and OUTPUT DROP
+      rules for devices that satisfy all blocking guards.],
+
+    [FR15],
+    [All four of the following guards must pass before a block is applied: (a) IP and
+      MAC not in `never_block`; (b) suspicion score $≥$ `block_confidence_floor`;
+      (c) severity == "high"; (d) no active block already exists for this IP.],
+
+    [FR16],
+    [Three remediation modes shall be supported: `dry_run` (log decision only),
+      `confirm` (prompt operator before applying), `enforce` (apply rule immediately).],
+
+    [FR17],
+    [Blocks shall expire after a configurable TTL; expired rules shall be removed on
+      each tick. All block decisions including dry-run outcomes shall be written to an
+      append-only audit log before any rule is applied or withheld.],
+
+    table.hline(stroke: 0pt),
+    table.cell(colspan: 2)[*F — Configuration*],
+
+    [FR18],
+    [All thresholds, event weights, decay parameters, scan interval, remediation mode,
+      and model selection shall be configurable via a single JSON file without code
+      changes.],
+  ),
+  caption: [Functional requirements.],
+  kind: "requirements",
+  supplement: "Table",
+) <fr-table>
+
+=== Non-Functional Requirements
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto),
+    align: (left, left, left),
+    [*ID*], [*Requirement*], [*Category*],
+
+    [NFR1],
+    [The system shall run on hardware with $≥$ 4 GB RAM with no dedicated appliance
+      or managed switching infrastructure required.],
+    [Deployment],
+
+    [NFR2],
+    [No outbound internet connectivity shall be required at runtime; the system shall
+      be fully functional in an air-gapped environment.],
+    [Deployment],
+
+    [NFR3],
+    [The LLM prompt construction path shall contain no dynamic interpolation of
+      device-supplied strings, satisfying FR13 by construction rather than by policy.],
+
+    [Security],
+
+    [NFR4],
+    [All remediation decisions shall be written to the audit log before any iptables
+      rule is applied or withheld; no silent blocking shall occur.],
+    [Auditability],
+
+    [NFR5],
+    [The scan interval shall be bounded below by a configurable rate-limit floor to
+      prevent subnet flooding regardless of operator configuration.],
+    [Performance],
+
+    [NFR6],
+    [The detection and scoring pipeline shall operate independently of LLM
+      availability, satisfying FR12 without degraded detection coverage.],
+    [Reliability],
+
+    [NFR7],
+    [The test suite shall require no live network access; all detection scenarios
+      shall be exercisable via simulated scan sequences injected directly into
+      PeerStore.],
+    [Testability],
+
+    [NFR8],
+    [The system shall build device baselines autonomously from a cold start with no
+      operator-supplied initial configuration beyond the target subnet.],
+    [Usability],
+  ),
+  caption: [Non-functional requirements.],
+  kind: "requirements",
+  supplement: "Table",
+) <nfr-table>
+
+== Use Cases <use-cases>
+
+Four actors interact with the system.  The *Network Administrator* is the human operator: they
+configure PeerWatch, review investigation reports, approve or reject remediation actions in
+`confirm` mode, and consult the audit log.  The *PeerWatch Daemon* is the primary automated
+actor: it drives the scan loop, ingests passive observations, performs fingerprint comparison,
+and coordinates all downstream components.  *Ollama* is an external actor: a local LLM service
+invoked by the daemon when suspicion crosses the investigation threshold; it is never invoked
+directly by the administrator.  *iptables* is a system actor that receives firewall rule commands
+from the Remediator component.
+
+#figure(
+  // TODO: insert figures/usecase.png once PlantUML diagram is rendered
+  rect(width: 90%, height: 8cm, stroke: 0.5pt)[
+    #align(center + horizon)[_Use case diagram (see source: docs/usecase.puml)_]
+  ],
+  caption: [PeerWatch use case diagram.],
+  kind: "figure",
+  supplement: "Figure",
+) <usecase-diagram>
+
+@tbl-usecases lists all ten identified use cases.  Full specifications for the three most
+security-critical cases (UC4, UC3, UC7) appear in Appendix B.  // TODO: cross-reference
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto),
+    align: (center, left, center),
+    table.header([*ID*], [*Use Case*], [*Primary Actor*]),
+    [UC1], [Run periodic subnet scan], [Daemon],
+    [UC2], [Ingest passive observations], [Daemon],
+    [UC3], [Compare fingerprint against baseline], [Daemon],
+    [UC4], [Trigger LLM investigation], [Daemon],
+    [UC5], [View investigation report], [Administrator],
+    [UC6], [Configure parameters], [Administrator],
+    [UC7], [Approve remediation block], [Administrator],
+    [UC8], [Review audit log], [Administrator],
+    [UC9], [Inject crafted nmap XML], [Administrator],
+    [UC10], [Auto-expire block on TTL], [Daemon],
+  ),
+  caption: [Identified use cases.],
+  kind: "requirements",
+  supplement: "Table",
+) <tbl-usecases>
+
+UC4 (_Trigger LLM investigation_) is architecturally the most constrained use case.  The daemon
+passes only sanitised, structured fields (suspicion score, event list, and fingerprint delta)
+to the agent prompt; raw packet payloads and peer-supplied strings are never forwarded.
+This design directly mitigates the indirect prompt-injection risk identified in NFR3
+@promptinjection.  UC7 (_Approve remediation block_) is exercised only in `confirm` mode; in
+`dry_run` mode it reduces to a no-op, and in `enforce` mode it is bypassed entirely by the
+daemon.  UC9 (_Inject crafted nmap XML_) is included as an explicit use case because the injection
+interface (dropping a file into `data/raw/` between ticks) forms the basis of both the attack
+simulation test suite and the manual demonstration scenario described in Chapter 5.  // TODO: cross-reference
+
+== Analysis <analysis>
+
+The requirements established what the system must do; this section analyses them to extract the
+information structures the system must store, the components that must exist to satisfy each
+requirement group, and the key architectural decisions that constrain the design before
+implementation begins.  These decisions are elaborated further in Chapter 4.  // TODO: cross-reference
+
+=== Data Model <data-model>
+
+The central entity is a *Peer*: a device that has been observed on the subnet in at least one
+scan.  A Peer record accumulates identity evidence across scan cycles: it is not a snapshot of
+a single observation but a longitudinal model of a device's expected behaviour.
+
+Stable devices (those whose nmap output includes a MAC address) are keyed by MAC address, since
+IP addresses are volatile: a DHCP lease renewal or router reboot can legitimately reassign an IP
+to a different device, which would cause a MAC-keyed system to raise a false positive only for
+the new device, not the old one.  Devices that nmap reports without a MAC (typically off-subnet
+hosts or devices that suppress ARP) are keyed by IP address and flagged as volatile; identity
+continuity guarantees for these peers are weaker by design.
+
+@tbl-datamodel summarises the fields maintained per Peer and the requirement group (@fr-table) each field
+satisfies.
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto),
+    align: (left, left, center),
+    table.header([*Field*], [*Description*], [*FR group*]),
+    [`mac`], [Primary key for stable devices; `None` for volatile peers], [A],
+    [`ip`], [Last observed IP address; primary key for volatile peers], [A],
+    [`os_family`], [Operating system family inferred by nmap], [B],
+    [`open_ports`], [Set of open TCP/UDP ports from most recent scan], [B],
+    [`known_services`],
+    [Per-port service type baseline (suppresses oscillation)],
+    [B],
+
+    [`ttl_baseline`],
+    [Mean TTL observed in passive capture; used for deviation scoring],
+    [C],
+
+    [`tcp_fingerprint`],
+    [Passive OS fingerprint from TCP stack behaviour (p0f model)],
+    [C],
+
+    [`route_path`], [Ordered hop sequence from last traceroute], [C],
+    [`ssh_key_hash`],
+    [SHA-256 of SSH host key on port 22 (or configured port)],
+    [B],
+
+    [`tls_cert_hash`], [SHA-256 of TLS certificate on known TLS ports], [B],
+    [`mac_oui_vendor`], [OUI vendor string derived from MAC prefix], [B],
+    [`suspicion_score`],
+    [Accumulated weighted evidence score; decays over time],
+    [D, E],
+
+    [`baseline_scans`], [Count of scans completed; gates warmup period], [A],
+    [`scan_history`], [Ordered list of `ScanRecord` snapshots], [A, B],
+  ),
+  caption: [Peer entity fields and the requirement groups they satisfy.],
+  kind: "requirements",
+  supplement: "Table",
+) <tbl-datamodel>
+
+Three supporting entities complete the model.  A *ScanRecord* is an immutable snapshot of one
+tick: it stores the timestamp, the list of anomaly events fired, and the score delta applied.
+A *FleetAlert* records a coordinated-pattern detection: the pattern name, the set of peer
+identifiers involved, the boost applied, and the tick timestamp.  A *RemediationBlock* is the
+audit record for one iptables rule: the target IP and MAC, the issue time, the expiry time, the
+triggering severity, and the score at the time of issue.  An *InvestigationReport* stores the
+structured JSON output of one LLM invocation: the peer identifier, severity verdict, rationale
+text, and recommended action.  None of these supporting entities reference each other; they are
+all associated to their parent Peer by MAC or IP key, keeping the model flat and easy to
+serialise to JSON.
+
+=== Component Identification <components>
+
+@tbl-components maps each functional requirement group to the source module responsible for
+satisfying it.  The mapping guided the initial module decomposition and is reflected directly in
+the `src/peerwatch/` package structure.
+
+#figure(
+  table(
+    columns: (auto, auto, 1fr),
+    align: (center, left, left),
+    table.header([*FR group*], [*Module(s)*], [*Responsibility*]),
+    [A],
+    [`daemon.py`, `parser.py`],
+    [Periodic nmap invocation, XML ingestion, tick coordination],
+
+    [B],
+    [`peer_store.py`, `comparator.py`],
+    [Device identity storage, fingerprint comparison, drift scoring],
+
+    [C],
+    [`packet_capture.py`, `route_tracker.py`],
+    [Passive TTL/TCP observation, traceroute path tracking],
+
+    [D],
+    [`fleet_correlator.py`],
+    [Cross-peer coordinated pattern detection, score boosting],
+
+    [E],
+    [`agent.py`],
+    [LLM triage invocation, rule-based fallback severity assignment],
+
+    [F],
+    [`remediation.py`],
+    [iptables rule management, block TTL, audit logging],
+
+    [—],
+    [`config.py`],
+    [Pydantic configuration model, threshold and weight validation],
+  ),
+  caption: [Functional requirement groups mapped to implementation modules.],
+  kind: "requirements",
+  supplement: "Table",
+) <tbl-components>
+
+The daemon coordinates all modules but contains no detection logic itself; it is responsible
+only for scheduling, calling `convert_pending_xml()` to ingest any injected nmap files, and
+advancing the tick.  This separation means each detection component can be unit-tested in
+isolation without running the full scan loop, which is important given that live nmap scans
+require root and network access.
+
+=== Key Design Decisions <design-decisions>
+
+Three decisions made during analysis have the broadest impact on the rest of the design.  Each
+was reached by considering alternatives against the requirements and constraints established
+above.
+
+*MAC-primary keying.*  The alternative was to key peers by IP address.  IP-keyed identity breaks
+immediately on DHCP lease renewal: if `192.168.1.42` is reassigned from a printer to a laptop,
+an IP-keyed store would score the laptop for not looking like the printer.  A hostname-keyed
+approach was also considered, but hostname resolution requires DNS, which is not always present
+or reliable on small-office networks, and hostnames can be spoofed as readily as IP addresses.
+MAC addresses are hardware-assigned and stable across reboots, making them the strongest
+available identity anchor at layer 2.  The MAC-spoofing case, where an attacker clones a
+victim's MAC, is explicitly detected as an identity collision event (FR8) rather than
+suppressed.
+
+*Additive score accumulation with exponential decay.*  An event-threshold model, fire an
+investigation on the first tick any single event exceeds a fixed magnitude, would satisfy
+FR13 at low implementation cost, but would violate NFR1 (false-positive rate).
+Axelsson's analysis of base-rate effects in intrusion detection @axelsson shows that even
+a 99% accurate binary classifier produces predominantly false positives on a network where
+attacks are rare; accumulating evidence across multiple ticks raises the posterior probability
+of a genuine attack before triggering investigation.
+Exponential decay (score halves every 3.5 days by default) prevents stale low-confidence events
+from permanently biasing the score of a peer that was suspicious six months ago and has been
+well-behaved since.  The cold-start warmup period (first five scans, configurable) records
+events without scoring them, establishing a baseline before the decay clock starts.
+
+*LLM as triage advisor, not decision-maker.*  An alternative design placed the LLM in the
+authorisation path: the agent would both assess severity and issue the iptables command.
+This was rejected on two grounds. First, auditability: FR18 requires a complete audit trail; LLM reasoning
+is non-deterministic and cannot be reproduced from the audit record alone. Second, reliability:
+if Ollama is unavailable, the system must still function; rule-based severity assignment serves
+as the fallback, and the remediation guards are purely deterministic.  The adopted design keeps
+the LLM solely in the investigation path: it produces a structured JSON report that a human or
+the rule-based guards can act on, but it never issues a system call.
+
+Chapter 4 describes the implementation of each component in detail, starting with the daemon  // TODO: cross-reference
+scan loop and progressing through the detection pipeline in the order data flows through it.
+
+= Design and Implementation
+
+
+== System Architecture <system-architecture>
+
+PeerWatch is a single daemon process (`daemon.py`) executing a periodic tick loop.
+Each tick is an atomic, sequential pipeline: it scans the subnet, ingests results into the
+device identity store, drains the passive observation queue, runs fleet-level correlation,
+triggers LLM investigation for peers whose suspicion score crosses the threshold, and applies
+or expires remediation blocks.
+The sequential tick model eliminates inter-component race conditions: no component reads state
+that another is concurrently writing, and the full system state is reproducible from the
+persisted `peer_store.json` at any tick boundary.
+
+@fig-arch shows the data flow between components.
+Solid-bordered boxes are Python modules; dashed-bordered boxes are external processes or
+files.
+Italicised labels denote components outside the Python process boundary.
+`PeerStore` (shaded) is the central mutable state shared by all detection phases.
+
+#figure(
+  diagram(
+    node-stroke: 0.5pt,
+    node-corner-radius: 3pt,
+    node-inset: 6pt,
+    spacing: (1.2em, 1.2em),
+
+    // Active scan path
+    node(
+      (0, 0),
+      text(size: 9pt, style: "italic")[nmap],
+      name: <nmap>,
+      fill: luma(245),
+      stroke: (dash: "dashed"),
+    ),
+    node((1, 0), text(size: 9pt)[`parser.py`], name: <parser>),
+    node(
+      (2, 0),
+      text(size: 9pt, weight: "bold")[PeerStore],
+      name: <ps>,
+      fill: luma(225),
+    ),
+    node((3, 0), text(size: 9pt)[`fleet_correlator`], name: <fc>),
+    node((4, 0), text(size: 9pt)[`agent.py`], name: <agent>),
+    node((5, 0), text(size: 9pt)[`remediation.py`], name: <rem>),
+    node(
+      (6, 0),
+      text(size: 9pt, style: "italic")[iptables],
+      name: <ipt>,
+      fill: luma(245),
+      stroke: (dash: "dashed"),
+    ),
+
+    // Passive capture path
+    node(
+      (0, 1),
+      text(size: 9pt, style: "italic")[scapy thread],
+      name: <scapy>,
+      fill: luma(245),
+      stroke: (dash: "dashed"),
+    ),
+    node((1, 1), text(size: 9pt)[Queue], name: <queue>),
+    node(
+      (2, 1),
+      text(size: 9pt, style: "italic")[peer_store.json],
+      name: <json>,
+      fill: luma(245),
+      stroke: (dash: "dashed"),
+    ),
+
+    // Active pipeline
+    edge(<nmap>, <parser>, "->"),
+    edge(<parser>, <ps>, "->"),
+    edge(<ps>, <fc>, "->"),
+    edge(<fc>, <agent>, "->"),
+    edge(<agent>, <rem>, "->"),
+    edge(<rem>, <ipt>, "->"),
+
+    // Passive ingestion
+    edge(<scapy>, <queue>, "->"),
+    edge(<queue>, <ps>, "->"),
+
+    // Persistence
+    edge(<ps>, <json>, "<->"),
+  ),
+  caption: [PeerWatch component data-flow diagram. Dashed boxes are external to the Python process. `PeerStore` is the central identity state updated by both ingestion paths.],
+) <fig-arch>
+
+*Tick pipeline.* Each tick executes the following steps in order:
+
++ *Rate-limit check.* If the previous tick completed fewer than `min_scan_interval_minutes`
+  ago, the tick is skipped to prevent scan storms during slow nmap runs.
++ *XML injection drain.* `convert_pending_xml()` processes any crafted nmap XML files dropped
+  into `data/raw/` since the last tick and moves them to `data/processed/`.
+  This is the test injection interface (UC9).
++ *nmap scan.* The daemon invokes nmap as a subprocess with `-O -sV -oX`; the resulting XML
+  is parsed by `parser.py` into a list of `NormalisedData` records.
++ *Active ingest.* `peer_store.ingest(results)` compares each host against its stored
+  fingerprint and accumulates any anomaly events and score deltas.
++ *Passive drain.* Observations accumulated by the background capture thread since the last
+  tick are drained from the inter-thread queue and applied to peer records.
++ *Fleet correlation.* `FleetCorrelator.run_tick()` examines events across all peers and
+  applies coordinated-pattern score boosts.
++ *Investigation.* For each peer whose `suspicion_score` meets or exceeds
+  `suspicion_threshold`, `SuspiciousAgent.investigate()` is called.
++ *Remediation.* `Remediator.run_tick()` evaluates guard conditions for each peer and
+  issues, skips, or expires iptables blocks.
++ *Persist.* `peer_store.save()` serialises the full store to `peer_store.json`.
+
+*Thread model.* Passive packet capture cannot share the main thread because scapy's
+`sniff()` is a blocking call.
+A single `threading.Thread(daemon=True)` is started once at daemon startup, before the first
+tick, and runs the capture loop indefinitely.
+Inter-thread communication uses a `queue.Queue`: the capture thread enqueues observation
+records and the main thread drains the queue at step 5 of each tick.
+`PeerStore` is only written by the main thread; the capture thread never touches it directly,
+so no locking is required on the store itself.
+
+*Persistence model.* `PeerStore` serialises to `peer_store.json` via Pydantic's
+`model_dump()` at the end of each tick.
+The file is loaded at daemon startup if it exists, allowing the daemon to resume from prior
+state after a restart without discarding accumulated suspicion evidence.
+`PeerStore.last_tick_at` is persisted alongside the peer data; `FleetCorrelator` uses it as
+the event-window start to avoid re-triggering fleet patterns from events that fired in a
+previous session.
+
+*Configuration injection.* All components receive a single `Config` instance constructed at
+startup.
+No module reads configuration from a global variable; each takes `config` as a constructor
+argument.
+This makes every component independently testable with a minimal config object, without
+touching the filesystem or invoking nmap.
+
+The following sections describe the design and implementation of each component in the order
+data flows through the pipeline.
 
 #bibliography(
   "refs.bib",
