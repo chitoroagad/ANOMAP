@@ -35,7 +35,7 @@
 )
 
 #set text(font: "Linux Libertine O", size: 12pt, lang: "en")
-#set par(justify: true, leading: 0.5em, spacing: 1.2em)
+#set par(justify: true, leading: 0.7em, spacing: 1.7em)
 
 // Heading styles
 #show heading.where(level: 1): it => {
@@ -66,6 +66,8 @@
 )
 
 #show figure: set block(breakable: true)
+
+#outline()
 
 // ── Abstract (full width before columns) ───────────────────────────────────────
 #block(
@@ -1540,30 +1542,40 @@ Italicised labels denote components outside the Python process boundary.
 + *Rate-limit check.* If the previous tick completed fewer than `min_scan_interval_minutes`
   ago, the tick is skipped to prevent scan storms during slow nmap runs.
 + *XML injection drain.* `convert_pending_xml()` processes any crafted nmap XML files dropped
-  into `data/raw/` since the last tick and moves them to `data/processed/`.
+  into `data/raw/` since the last tick and writes the converted JSON to `data/processed/`.
   This is the test injection interface (UC9).
 + *nmap scan.* The daemon invokes nmap as a subprocess with `-O -sV -oX`; the resulting XML
   is parsed by `parser.py` into a list of `NormalisedData` records.
-+ *Active ingest.* `peer_store.ingest(results)` compares each host against its stored
-  fingerprint and accumulates any anomaly events and score deltas.
++ *Active ingest.* `add_or_update_peer()` is called once per host returned by nmap,
+  comparing each against its stored fingerprint and accumulating anomaly events and score
+  deltas.
 + *Passive drain.* Observations accumulated by the background capture thread since the last
-  tick are drained from the inter-thread queue and applied to peer records.
-+ *Fleet correlation.* `FleetCorrelator.run_tick()` examines events across all peers and
+  tick are drained from the inter-thread queue and applied to peer records via the
+  corresponding `PeerStore` ingestion methods.
++ *Fleet correlation.* `FleetCorrelator.analyse()` examines events across all peers and
   applies coordinated-pattern score boosts.
 + *Investigation.* For each peer whose `suspicion_score` meets or exceeds
   `suspicion_threshold`, `SuspiciousAgent.investigate()` is called.
-+ *Remediation.* `Remediator.run_tick()` evaluates guard conditions for each peer and
-  issues, skips, or expires iptables blocks.
++ *Remediation.* `Remediator.evaluate()` checks guard conditions for each peer and
+  `act()` issues or skips iptables blocks; `unblock_expired()` removes blocks whose TTL
+  has elapsed.
 + *Persist.* `peer_store.save()` serialises the full store to `peer_store.json`.
 
-*Thread model.* Passive packet capture cannot share the main thread because scapy's
-`sniff()` is a blocking call.
-A single `threading.Thread(daemon=True)` is started once at daemon startup, before the first
-tick, and runs the capture loop indefinitely.
+*Thread model.* The passive capture layer (`packet_capture.py`) is implemented as a
+self-contained background component and is fully functional as a library; however, it is
+not yet started by `daemon.py` in the current release — the daemon tick runs only the
+active-scan pipeline (steps 1–4 and 6–9).
+The architecture below describes the intended integration, which is the natural next step
+for deployment.
+When wired in, passive packet capture cannot share the main thread because scapy's
+`sniff()` is a blocking call: a single `threading.Thread(daemon=True)` would be started
+once at daemon startup (before the first tick), running the capture loop indefinitely.
+(`daemon=True` means the thread exits automatically when the main process exits, with no
+explicit join required.)
 Inter-thread communication uses a `queue.Queue`: the capture thread enqueues observation
 records and the main thread drains the queue at step 5 of each tick.
-`PeerStore` is only written by the main thread; the capture thread never touches it directly,
-so no locking is required on the store itself.
+All `PeerStore` ingestion methods acquire a `threading.Lock` (§4.3), so passive
+observations drained on the main thread and any future concurrent callers are safe.
 
 *Persistence model.* `PeerStore` serialises to `peer_store.json` via Pydantic's
 `model_dump()` at the end of each tick.
@@ -1582,6 +1594,925 @@ touching the filesystem or invoking nmap.
 
 The following sections describe the design and implementation of each component in the order
 data flows through the pipeline.
+
+== Scan Loop and Data Ingestion <scan-loop>
+
+`daemon.py` is the entry point and tick coordinator.
+It contains no detection logic: its responsibilities are scheduling, nmap subprocess
+management, file I/O, and dispatching each tick's results to the pipeline modules.
+This separation means the entire detection pipeline can be exercised in tests by calling
+`run_pipeline()` directly with pre-supplied JSON files, without invoking nmap or touching
+the network.
+
+=== nmap Invocation
+
+Each tick invokes nmap as a subprocess:
+
+```python
+subprocess.run(
+    ["nmap", "-sV", "-O", "--osscan-guess", "-oX", str(output_path), subnet],
+    capture_output=True, text=True, timeout=300,
+)
+```
+
+Three flags drive the identity model.
+`-sV` enables service and version detection, populating the per-port service strings that
+PeerStore uses for service-drift comparison.
+`-O` enables OS detection, which requires root; if the daemon runs without elevated
+privileges, `os_candidates` will be empty for every host and OS-drift events will never
+fire.
+`--osscan-guess` instructs nmap to emit all plausible OS candidates, not only its top
+pick — this is what makes the `os_candidates` multi-entry dictionary possible and is
+therefore essential to the false-positive suppression described in §4.3.
+
+A 300-second timeout guards against unresponsive hosts stalling the scan loop.
+Non-zero nmap exit codes are logged but do not abort the daemon: a failed scan produces
+no new JSON file, so the pipeline runs on the previous tick's data with no new ingestion,
+and the loop continues.
+
+=== XML to JSON Conversion and Field Stripping
+
+`jsonify_xml()` parses nmap's XML output using `xmltodict` — a lightweight Python library
+that maps XML element hierarchies to Python dicts — and writes a cleaned JSON file
+to `data/processed/`.
+Before writing, a set of volatile fields is removed from each host record:
+
+```python
+_STRIP_FIELDS = {
+    "@starttime", "@endtime", "distance", "tcpsequence",
+    "ipidsequence", "tcptssequence", "times", "hostnames",
+}
+```
+
+These fields change on every scan (TCP ISN sequencing counters, scan timestamps, and
+round-trip time measurements) but carry no persistent identity signal.
+Retaining them would inject noise into fingerprint comparisons and inflate the stored JSON
+with data that cannot distinguish a firmware update from an impersonation.
+Stripping happens at conversion time, so the fields are absent from both the on-disk JSON
+and the structures ingested by PeerStore.
+
+=== The Injection Interface
+
+`convert_pending_xml()` polls `data/raw/` for XML files that do not yet have a JSON
+counterpart in `data/processed/`:
+
+```python
+def convert_pending_xml(output_dir: Path) -> None:
+    for xml_path in RAW_DIR.glob("*.xml"):
+        json_equiv = output_dir / (xml_path.stem + ".json")
+        if not json_equiv.exists():
+            logging.info(f"New XML detected: {xml_path.name}")
+            jsonify_xml(xml_path, output_dir)
+```
+
+Any XML file dropped into `data/raw/` between ticks is converted and ingested in the
+next tick, without requiring root access or a live network.
+This interface is the basis of the entire attack simulation test suite described in
+Chapter 5: crafted nmap XML files representing spoofed devices, ARP poisoning scenarios,
+and service impersonation attacks can be injected and processed under controlled
+conditions. // TODO: cross-reference
+The injection check runs before the live nmap scan each tick, ensuring manually supplied
+files are processed in the same tick they appear.
+
+=== NormalisedData and the os_candidates Design
+
+`NmapParser` transforms one xmltodict host record into a `NormalisedData` Pydantic model.
+Most fields are straightforward extractions; the `os_candidates` field warrants attention:
+
+```python
+candidates: dict[str, int] = {}
+for match in osmatches:
+    accuracy = int(match.get("@accuracy", 0))
+    for osclass in match.get("osclass", []):
+        family = osclass.get("@vendor") or osclass.get("@osfamily")
+        if family:
+            candidates[family] = max(candidates.get(family, 0), accuracy)
+```
+
+nmap returns multiple `osmatch` entries ordered by descending accuracy.
+Rather than recording only the top-ranked family, `NmapParser` iterates all entries and
+builds a dict mapping each OS family to its best accuracy score across all matches
+i.e. `{"Linux": 96, "Google": 93}` for an Android device.
+This representation matters because nmap's top pick is not deterministic: slight variation
+in TCP response timing between scans can cause it to reorder "Linux" and "Microsoft
+Windows" as the top result for the same device.
+If PeerStore compared only the top candidate, this reordering would fire an OS-change
+event on every other scan.
+By comparing candidate sets (§4.3), PeerStore fires only when the union of known
+candidates and newly observed candidates diverges, which is robust to nmap's
+non-determinism.
+
+Port extraction handles two xmltodict edge cases: when nmap reports exactly one open port,
+xmltodict returns a dict rather than a list, so `_extract_ports()` normalises both forms.
+Service strings are constructed as `name + "-" + product` where both are present
+(e.g.\ `ssh-OpenSSH`), falling back to whichever is available.
+`open_ports` is sorted before storage so that Jaccard distance computation in PeerStore
+is independent of scan ordering.
+
+=== Ingestion Tracking, Rate Limiting, and Shutdown
+
+`PeerStore.ingested_scan_files` is a set of JSON filenames that have already been
+processed.
+`run_pipeline()` filters `data/processed/*.json` against this set before ingesting,
+ensuring that daemon restarts do not replay historical scans and that each injected file
+is ingested exactly once.
+The set is persisted with `peer_store.json` at the end of each tick.
+
+The rate-limit guard compares the elapsed time since `last_scan_at` against
+`min_scan_interval_minutes` (default 2 minutes).
+If a slow scan overlaps its scheduled successor, the next tick is deferred rather than
+stacked, preventing two nmap processes from running concurrently.
+
+Graceful shutdown is handled by registering SIGINT and SIGTERM handlers that set a
+`shutdown` boolean flag.
+The inter-tick sleep is implemented as `_sleep_interruptible`, which wakes every second
+to check the flag.
+The daemon therefore always completes its current tick, including persisting `peer_store.json`,
+before exiting — ensuring no partially-applied score increments are lost on SIGTERM.
+
+== Device Identity Store and Fingerprint Comparison <peer-store>
+
+`PeerStore` is the central mutable state of the system.
+It maintains a longitudinal model of each observed device, accumulates anomaly evidence
+across scan cycles, and exposes ingestion methods for all five detection signals.
+All public methods that mutate peer state acquire a `threading.Lock`, since the passive
+capture thread calls ingestion methods concurrently with the main thread's active-scan
+ingestion.
+
+=== Peer Model and Identity Keying
+
+Each device is represented by a `Peer` record keyed by an internal UUID.
+Two auxiliary indexes provide fast lookup: `mac_to_id` maps normalised MAC address to
+UUID, and `ip_to_id` maps IP address to UUID.
+Stable devices, those whose nmap output includes a MAC address, are registered in both
+indexes; volatile (MAC-less) devices appear only in `ip_to_id` and carry an `is_volatile`
+flag.
+
+`add_or_update_peer()` resolves which peer a new scan result belongs to by querying both
+indexes and branching on the number of candidates found:
+
+- *Zero candidates* — the device is new; `_create_peer()` is called.
+  The first scan's service types are pre-loaded into `known_services` so day-one
+  observations do not immediately trigger service-change events.
+- *One candidate* — the existing peer is updated. Suspicion decay is applied first,
+  then fingerprint comparison, then the peer record is refreshed.
+- *Multiple candidates* — the MAC index and IP index resolved to different peer records,
+  indicating a possible identity collision; `_resolve_conflict()` is invoked.
+
+=== Fingerprint Comparison Engine
+
+`_compare_fingerprints()` evaluates four checks in sequence and returns a
+`FingerprintComparison` record containing the events that fired and an overall similarity
+score.
+
+*OS comparison via candidate-set intersection.*
+Rather than comparing the single top-ranked OS pick, the comparison uses the full set of
+OS family names across all `osmatch` entries:
+
+```python
+prev_families = _os_candidate_families(prev)
+curr_families = _os_candidate_families(incoming)
+os_match = bool(prev_families & curr_families)
+if not os_match:
+    events.append("os_family_changed")
+```
+
+This choice is motivated by nmap's non-determinism: a device at 95% confidence for both
+"Sony" and "Linux" may flip its top-ranked entry between scans depending on TCP response
+timing.
+Set intersection is stable under this jitter: `os_family_changed` fires only when the
+candidate sets are genuinely disjoint, i.e. no previously observed OS family appears in
+the new scan at all.
+
+*Port-set Jaccard similarity.*
+Open port sets are compared as:
+$ J(A, B) = lr(|A inter B|) / lr(|A union B|) $
+With $A$ and $B$ being the previous and incoming port sets. A result below `port_jaccard_threshold`
+(default 0.6) fires `port_profile_changed` (+0.5).
+Empty unions are excluded from comparison to avoid penalising devices behind a firewall
+that intermittently suppresses all ports.
+
+*Service type comparison on shared ports.*
+Only the first token of nmap's service string is compared: `ssh` from `ssh-OpenSSH`,
+`http` from `http-nginx`.
+Version upgrades within the same protocol family are therefore not flagged — only a
+genuine protocol change on a port (e.g. `ssh` → `http`) triggers
+`service_type_changed` (+1.0 per port).
+Comparison is limited to `shared_ports = prev_ports & curr_ports`; a port present in
+only one scan is captured by the Jaccard check, not here.
+
+*Full identity shift.*
+A composite event that fires when all three dimensions change simultaneously: OS families
+disjoint, Jaccard below 0.4, and at least one service type changed or no shared ports at
+all.
+This is the primary device-substitution signal (+2.0) and is designed to be robust
+against the single-signal false positives that motivated the multi-signal approach.
+
+The overall similarity score used for logging and drift reporting (not for triggering
+events) is:
+$ s = 0.5 dot.op s_"OS" + 0.3 dot.op J + 0.2 dot.op s_"svc" $
+where $s_"OS" = lr(|F_"prev" inter F_"curr"|) / lr(|F_"prev" union F_"curr"|)$ is the
+Jaccard similarity of the two OS candidate-family sets (not a binary flag, so partial
+overlap (e.g. one family in common out of three) gives a score between 0 and 1);
+$J$ is the port-set Jaccard from the previous check; and $s_"svc"$ is the fraction of
+shared ports whose service type was unchanged
+($s_"svc" = 1 - lr(|"changed ports"|) / lr(|"shared ports"|)$, or 1.0 when there are no
+shared ports).
+
+=== False-Positive Suppression
+
+Three distinct mechanisms address recurring false-positive patterns identified during
+development.
+
+*`known_services` oscillation suppression.*
+`Peer.known_services` is a per-port set of service type strings that have been observed
+at least once.
+Before recording a `service_type_changed` event, the incoming service type is checked
+against this set:
+
+```python
+new_type = new_svc.split("-")[0] if new_svc else ""
+if new_type in prev.known_services.get(port, set()):
+    # oscillation — silently re-merge and skip
+    continue
+```
+
+If the type has been seen before, the event is silently skipped and the old type is
+re-added to the set.
+Without this guard, a Chromecast whose nmap alternates between `ajp13` and `castv2` on
+port 8009 across consecutive scans would fire a service-change event every other tick.
+
+*Warmup period.*
+For the first `baseline_min_scans` scans (default 5), anomaly events are recorded in
+`identity_history` but the suspicion score is not incremented.
+This prevents a device first observed mid-configuration from entering the store with
+artificially elevated score.
+
+*One-shot guards.*
+`flagged_port_mismatches: set[int]` and `flagged_vendor_mismatch: bool` are set when a
+port-protocol mismatch or MAC OUI/OS mismatch is first detected and prevent those checks
+from re-scoring on every subsequent tick.
+Both fields are persisted in the peer snapshot, so the guards survive daemon restarts.
+
+*Port-protocol mismatch.*
+`WELL_KNOWN_PORT_PROTOCOLS` maps nine well-known ports to the set of service types
+legitimately expected on them: port 22 expects `ssh`, port 80 expects `http`, and so on.
+Any other service type detected on these ports fires `port_protocol_mismatch` (+3.0),
+the highest single-event score in the system, reflecting that running a non-standard
+service on a well-known port is a strong indicator of a backdoor or replacement device.
+Port 443 deliberately includes both `https` and `http` since nmap may report `http` when
+TLS termination is handled transparently by a proxy.
+Service identifications of `tcpwrapped` (where nmap could not determine the protocol) are
+excluded to avoid false positives on port-forwarded services.
+
+*MAC OUI vendor versus OS family.*
+`VENDOR_OS_COMPATIBILITY` maps vendor name substrings to the set of OS families
+compatible with that hardware.
+A device with an Apple-registered MAC but a Linux OS fingerprint fires
+`mac_vendor_os_mismatch` (+2.0).
+Generic NIC vendors (Intel, Realtek, ASUSTek) are intentionally absent from the
+table: commodity PC hardware can run any OS, so flagging it would produce a high false
+positive rate.
+Only vendors with a strongly constrained hardware ecosystem (Apple, Raspberry Pi,
+Microsoft Xbox, Sony, Amazon) are included.
+Matching uses substring search (`keyword in vendor.lower()`) to handle vendor string
+variations in nmap output.
+
+=== Scoring and Exponential Decay
+
+Suspicion score is additive across events and ticks.
+Decay is applied at the start of each `add_or_update_peer()` call, before comparison:
+
+```python
+peer.suspicion_score *= 0.5 ** (elapsed_days / self._cfg.suspicion_half_life_days)
+```
+
+Applying decay _before_ scoring means a peer that has been clean for a month arrives at
+the comparison with near-zero prior evidence; new events are therefore not amplified by
+stale history.
+The default half-life is 3.5 days: a score of 3.0 (the investigation threshold) decays
+below 1.0 in approximately one week of clean scans.
+
+@tbl-score-weights summarises the score increments for all active-scan events.
+
+#figure(
+  table(
+    columns: (1fr, auto),
+    align: (left, center),
+    table.header([*Event*], [*Score*]),
+    [`os_family_changed`], [+2.0],
+    [`full_identity_shift`], [+2.0],
+    [`mac_vendor_os_mismatch`], [+2.0],
+    [`service_type_changed`], [+1.0 per port],
+    [`identity_conflict_detected`], [+1.0],
+    [`port_profile_changed`], [+0.5],
+    [`mac_conflict`], [+0.5],
+    [`port_protocol_mismatch`], [+3.0],
+  ),
+  caption: [Active-scan suspicion score increments. Passive-capture and fleet events are covered in §4.4 and §4.5.],
+  kind: "requirements",
+  supplement: "Table",
+) <tbl-score-weights>
+
+=== Conflict Resolution, Volatile Peers, and Persistence
+
+*Identity conflict resolution.*
+When `add_or_update_peer()` resolves multiple candidate IDs (MAC and IP map to different
+peer records) `_resolve_conflict()` selects a survivor and merges the losers into it.
+Survivor selection prefers the non-volatile (MAC-confirmed) peer; among equally volatile
+candidates, the higher scan count wins, favouring the record with more accumulated
+evidence.
+`_merge_peers()` transfers history, IP set, `known_services`, and score from loser to
+survivor before deleting the loser record.
+The conflict records `identity_conflict_detected` (+1.0) on the survivor.
+
+This situation arises in two scenarios: a MAC-spoofing attack where the attacker takes a
+known IP without cloning the MAC (the IP maps to the victim's peer, the attacker's MAC
+maps to no peer, collision at the IP boundary), and a legitimate DHCP reassignment where
+an IP previously held by peer A is now claimed by a new device with a different MAC.
+The system treats both conservatively: score is incremented and investigation is triggered
+if the threshold is reached, leaving the operator to distinguish the cases.
+
+*Volatile peer eviction.*
+MAC-less peers not observed within `volatile_peer_ttl_hours` are removed by
+`evict_stale_volatile_peers()`, called once per tick after ingestion.
+This bounds memory growth on subnets with high DHCP churn where off-subnet hosts
+transiently appear without MAC addresses.
+
+*Persistence.*
+`PeerStore.save()` writes a versioned JSON snapshot containing all peer records,
+`ingested_scan_files`, and `last_tick_at`.
+`PeerStore.load()` rebuilds the `mac_to_id` and `ip_to_id` indexes from the peer data
+rather than storing them separately, ensuring index consistency on load.
+A `_SNAPSHOT_VERSION` integer guards against loading snapshots from an incompatible
+schema — a mismatch logs a warning and starts a fresh store rather than attempting
+migration.
+
+*Comparator.*
+`Comparator` is a read-only reporter that takes a populated `PeerStore`, aggregates
+event counts per peer into `PeerDriftSummary` records, sorts them by suspicion score
+descending, and logs a formatted drift table to the daemon log.
+It contains no detection logic and makes no mutations; it is called once per tick after
+ingestion to provide a human-readable audit trail independently of the alert output.
+
+== Passive Observation Layer <passive-layer>
+
+The passive observation layer collects network signals continuously between nmap scans,
+providing four detection channels that active scanning cannot deliver: TTL baseline
+deviation, ARP spoofing, TCP stack fingerprint contradiction, and IP ID counter anomaly.
+A fifth channel, route path stability, runs on demand via traceroute.
+
+=== Architecture and Testability
+
+The layer is split into two halves that share no direct dependency.
+The first half consists of typed observation dataclasses ,`TTLObservation`,
+`ARPObservation`, `TCPFingerprintObservation`, and `IPIDObservation`, that are plain
+Python `@dataclass`s with no scapy import.
+The second half is the capture machinery: `PassiveCaptureObserver` and
+`SniffCaptureLoop`.
+
+This separation is the key testability decision for Phase 2.  // TODO: cross-reference
+Because the observation types are scapy-free, the full test suite for passive detection
+injects typed observations directly into `PeerStore.ingest_*()` without requiring a
+live network interface, elevated privileges, or scapy installed.
+A test that verifies ARP spoofing detection simply constructs an `ARPObservation` with
+a conflicting MAC and calls `peer_store.ingest_arp_observation()` — no packet capture
+involved.
+
+`PassiveCaptureObserver` wires the two halves.
+It maintains four callback lists and exposes `on_ttl()`, `on_arp()`,
+`on_tcp_fingerprint()`, and `on_ip_id()` registration methods.
+`process_packet()` parses a raw scapy packet into the appropriate observation type and
+dispatches to all registered callbacks.
+The daemon registers one callback per type that routes observations to the corresponding
+`PeerStore.ingest_*()` method.
+
+`SniffCaptureLoop` wraps scapy's `sniff()` in a daemon thread:
+
+```python
+sniff(
+    iface=self.iface,
+    filter=self.bpf_filter,   # "ip or arp"
+    prn=self.observer.process_packet,
+    store=False,
+    timeout=timeout,
+)
+```
+
+The BPF filter `"ip or arp"` is applied at kernel level before any Python code runs,
+discarding non-IP, non-ARP traffic without waking the Python interpreter.
+`store=False` discards packets after processing, preventing unbounded memory
+accumulation in long-running sessions.
+The thread is a daemon thread so it exits automatically when the main process ends,
+without requiring an explicit stop call.
+
+=== Per-Signal Capture
+
+*TTL baseline and deviation.*
+Real-world TTL values observed in packets are always less than or equal to the device's
+origin TTL, since each router along the path decrements the field by one.
+`snap_ttl_to_os_default()` exploits this property to recover the plausible origin:
+
+```python
+_TTL_THRESHOLDS = [64, 128, 255]   # Linux/macOS, Windows, Cisco
+
+def snap_ttl_to_os_default(raw_ttl: int) -> int:
+    for threshold in _TTL_THRESHOLDS:
+        if raw_ttl <= threshold:
+            return threshold
+    return _TTL_THRESHOLDS[-1]
+```
+
+An observed TTL of 60 snaps to 64 (four-hop Linux host); 120 snaps to 128 (eight-hop
+Windows host).
+PeerStore builds a per-peer TTL baseline from the first `ttl_baseline_min_samples`
+observations, using the median to resist outlier packets, then snaps to an OS default.
+Once established, any observation deviating by more than `ttl_deviation_threshold`
+(default 15) fires `ttl_deviation` (+2.0).
+A deviation of this magnitude cannot be explained by a route-length change alone —
+it implies a different OS-family origin TTL or an injected packet with a forged TTL.
+
+*ARP spoofing detection.*
+Only ARP reply packets (`op == 2`, is-at) are processed.
+Each reply's claimed IP-to-MAC binding is checked against the confirmed MAC stored in
+PeerStore for that IP.
+A discrepancy fires `arp_spoofing_detected` (+3.0), the highest-weight passive signal.
+This directly detects the attack described in @lan-layer-attack: an attacker broadcasting gratuitous
+ARP replies to redirect subnet traffic through a machine they control.
+
+*TCP passive fingerprint.*
+TCP SYN packets are fingerprinted passively: SYN-only (`SYN` flag set, `ACK` not set)
+because the SYN carries the initiating device's native TCP stack options unmodified.
+A SYN-ACK would reflect the responding server's preferences, not the device being
+monitored.
+Three OS profiles are maintained in `TCP_FINGERPRINT_PROFILES`, drawn from p0f and
+nmap OS templates @p0f:
+
+```python
+"Linux": {
+    "option_signatures": [
+        ["MSS", "SACK", "TS", "NOP", "WScale"],
+        ["MSS", "NOP", "NOP", "TS", "NOP", "WScale", "SACK"],
+    ],
+    "window_hint": range(14600, 65536),
+    "ttl": 64,
+},
+```
+
+`infer_os_from_tcp_fingerprint()` scores each profile against the observed option-kind
+sequence: +1.0 per option present in both signature and observation, −0.5 per expected
+option absent, −0.3 per extra option present; +1.0 bonus for exact window size match,
++0.5 for window in range.
+A minimum score of 2.0 is required to suppress guesses on sparse input.
+The inferred OS is cross-referenced against the peer's nmap `os_candidates` set via a
+family mapping (e.g.\ `"Linux"` covers both `"Linux"` and `"Android"` in nmap output).
+A contradiction fires `tcp_fingerprint_mismatch` (+2.0).
+
+*IP ID counter anomaly.*
+The IP Identification header field is a 16-bit counter.
+Older operating systems (and Windows) maintain a single global counter that increments
+monotonically; modern Linux assigns a random value per connection.
+`_detect_sequential_ip_ids()` distinguishes the two behaviours by examining the median
+per-step delta across a sample window:
+
+```python
+deltas = [(samples[i+1] - samples[i]) % 65536 for i in range(len(samples) - 1)]
+return statistics.median(deltas) <= 100
+```
+
+A median delta of ≤ 100 is characteristic of a global counter; large irregular deltas
+indicate random assignment.
+Only peers classified as sequential have their subsequent IP IDs monitored for anomalous
+jumps; flagging random-ID peers would produce pure noise.
+Modular arithmetic handles the 16-bit wrap-around at 65535→0.
+
+=== Route Tracking and ASN Enrichment
+
+`RouteTracker` runs traceroute to a target address and maintains a per-destination
+baseline hop sequence.
+The subprocess is invoked with `-n` (no DNS reverse lookups, for speed), `-q 1` (one
+probe per hop rather than the default three), and a timeout derived from the maximum hop
+count:
+
+```
+traceroute -n -q 1 -w 5 -m 30 <destination>
+```
+
+The output parser deduplicates the three probe lines traceroute emits by default using
+a `seen_hops` set, taking only the first responding IP per hop number.
+Silent hops (`* * *`) are recorded as `RouteHop` entries with `ip=None`.
+
+`_compare()` evaluates three change types:
+- *Hop count change*: total hop count differs.
+- *Hop sequence change*: Jaccard similarity of responding-IP sets falls below 0.7, a
+  tighter threshold than the port Jaccard (0.6) because legitimate route changes are
+  less frequent than port profile variations.
+- *New ASN in path*: an autonomous system number appears in the observed path that was
+  not present in the baseline.
+Any of these fires `route_changed` (+1.0 for hop changes, +1.5 for new ASN).
+
+ASN resolution uses Team Cymru's DNS-based BGP origin service @censys.
+The query format is a reverse-octet DNS TXT lookup:
+`<reversed-octets>.origin.asn.cymru.com`.
+Two resolvers are tried in order: `dns.resolver` (fast, requires the `dnspython`
+package) and a raw socket whois connection to `whois.cymru.com:43` (no external
+dependency).
+Results are cached in-process in `_ASN_CACHE` to avoid repeated lookups for the same
+hop IP across ticks.
+RFC-1918 and loopback addresses are skipped — private-network hops have no public ASN.
+
+A new ASN appearing in a traceroute path is a high-confidence signal for a BGP prefix
+hijack or an MITM device inserted as a routing hop: both introduce an autonomous system
+boundary not present in the established baseline.
+
+== Fleet Correlation <fleet-correlator>
+
+Per-peer fingerprint comparison detects that _a_ device has changed; it cannot determine
+whether multiple devices changed _simultaneously_.
+`FleetCorrelator` addresses this gap by examining the full event log across all peers
+within a single tick window and firing coordinated-pattern detections when several peers
+show the same anomaly type concurrently.
+It runs after all per-peer ingestion is complete and before `SuspiciousAgent`, so that
+investigation prompts already contain fleet context.
+
+=== Tick Window and Event Collection
+
+`analyse()` opens a window from `peer_store.last_tick_at` to the current time.
+On the first tick `last_tick_at` is `None` and the method returns immediately with no
+events: there is no prior baseline to define a window boundary.
+
+Event collection builds a `recent` mapping of peer ID to the list of event type strings
+fired since `window_start`:
+
+```python
+recent: dict[str, list[str]] = {}
+for peer_id, peer in self._store.peers.items():
+    events_in_window = [
+        e.event for e in peer.identity_history
+        if e.timestamp >= window_start
+    ]
+    if events_in_window:
+        recent[peer_id] = events_in_window
+```
+
+Using `last_tick_at` as the boundary rather than `now() - scan_interval` is deliberate.
+`last_tick_at` is persisted in `peer_store.json` at the end of every tick; on daemon
+restart it is reloaded from the snapshot.
+Events that fired before the restart have timestamps earlier than the loaded
+`last_tick_at` and are therefore excluded from the next tick's window.
+A wall-clock interval would have no such anchor and would re-process historical events
+on every restart.
+
+=== Pattern Matching, Boost Cap, and Fleet Context
+
+The pattern registry is a flat list of 4-tuples: name, trigger event set, min-peers
+config attribute, and base boost:
+
+```python
+_PATTERNS = [
+    ("arp_poisoning",    frozenset({"arp_spoofing_detected"}), "fleet_arp_min_peers", 2.0),
+    ("identity_sweep",   frozenset({"identity_conflict_detected", "full_identity_shift"}), "fleet_identity_min_peers", 2.0),
+    ("route_shift",      frozenset({"route_changed"}), "fleet_route_min_peers", 1.5),
+    ("os_normalisation", frozenset({"os_family_changed"}), "fleet_os_min_peers", 1.5),
+    ("ttl_shift",        frozenset({"ttl_deviation"}), "fleet_ttl_min_peers", 1.5),
+    ("service_sweep",    frozenset({"service_type_changed"}), "fleet_service_min_peers", 1.0),
+]
+```
+
+A peer "hits" a pattern if it fired at least one event in the trigger set during the
+current window.
+A pattern fires if the number of hitting peers meets or exceeds its `min_peers`
+threshold.
+The `frozenset` semantics produce OR matching within a pattern: `identity_sweep`
+triggers on either `full_identity_shift` or `identity_conflict_detected` because a
+fleet-wide device-substitution attack may produce either event depending on whether the
+attacker clones the victim's MAC.
+Min-peer thresholds differ by pattern: `arp_poisoning` requires only 2 peers (an
+attacker targeting a gateway and one host is sufficient), while `service_sweep` requires
+4 (a scan-wide service change is only suspicious at scale).
+All thresholds are configurable so operators can tune them for their subnet size.
+
+Boost application is capped per peer per tick.
+A `boost_applied` dict tracks cumulative boost received this tick; each pattern's
+contribution is clipped to the remaining headroom:
+
+```python
+headroom = max(0.0, cap - boost_applied.get(pid, 0.0))
+actual_boost = min(boost, headroom)
+```
+
+The default cap is 4.0.
+Without it, a peer matching all six patterns in a single tick would accumulate 9.5 in
+fleet boosts alone, immediately triggering a remediation block on what may be a
+coincidental co-occurrence of routine events.
+The cap ensures fleet boosts amplify existing per-peer evidence rather than substitute
+for it.
+Each boost is recorded as a `fleet_correlation_boost` event on the peer via
+`PeerStore.add_suspicion()`, preserving a full audit trail of the scoring decision.
+
+`FleetEvent` objects serve two purposes after `analyse()` returns.
+The daemon appends each to `fleet_alerts.jsonl` for persistent audit.
+All events are also passed to `SuspiciousAgent.investigate_all(fleet_events=...)` so
+the LLM prompt includes the coordination context: pattern name, number of peers
+involved, and the list of affected IPs.
+Without this injection, each peer's investigation would be independent and the
+simultaneous co-occurrence, the very signal that distinguishes a coordinated attack
+from a coincidental configuration change, would be invisible to the agent.
+
+== LLM-Assisted Investigation <agent>
+
+`SuspiciousAgent` is invoked after fleet correlation completes.
+It runs a four-step investigation pipeline for each peer whose suspicion score meets or
+exceeds `suspicion_threshold`, produces a structured JSON report, and optionally feeds
+cryptographic anchor results back into `PeerStore`.
+The LLM is strictly in the triage path: it produces a severity verdict and
+recommendations, but it never issues system calls and is never in the authorisation path
+for remediation.
+
+=== Investigation Pipeline
+
+`investigate_all()` selects peers with `score >= threshold`, builds a per-peer lookup
+of any `FleetEvent` objects that include that peer, and calls `investigate()` for each.
+A single peer investigation proceeds in four steps:
+
++ `_analyse()` — format peer context into a prompt, invoke the LLM, parse the JSON
+  response into an `AgentDecision`.
++ `_build_auto_identity_checks()` — append `ssh_hostkey` and `ssl_cert` scan
+  recommendations for any peer with SSH or HTTPS ports open, regardless of what the
+  LLM recommended.
++ `_execute_scans()` — execute each recommended scan type; some results feed back into
+  `PeerStore`.
++ `_write_report()` — serialise the full `InvestigationReport` to
+  `reports/investigation_<mac>_<timestamp>.json`.
+
+=== Prompt Design and Injection Prevention
+
+`_format_peer_context()` constructs the human-turn message passed to the LLM.
+The included fields are: MAC address, IP set, suspicion score, OS fields from the latest
+`NormalisedData`, all OS candidates with accuracy scores, device vendor string, open
+ports, current services dict, per-port `known_services` history, and the timestamped
+event history with structured detail dicts.
+When fleet events are present, a labelled `FLEET CONTEXT` section is appended with the
+pattern name, affected peer count and IPs, and the window timestamps.
+
+What the prompt deliberately excludes is equally important.
+Raw packet payloads, nmap service banner strings, DNS hostnames, and any other
+unstructured data originating from the network are not forwarded.
+The `details` dicts in `IdentityEvent` records contain only structured fields
+(`port=22`, `old_service="ssh"`, `new_service="http"`) not raw wire data.
+This is the primary mitigation for indirect prompt injection @promptinjection: an
+attacker cannot craft a service banner or hostname that alters the LLM's severity
+verdict, because those strings never appear in the prompt.
+
+The system prompt in `prompts/suspicious_agent.txt` includes a Fleet Context Guide
+section that explicitly instructs the model to increase severity when a fleet pattern is
+present and to name the pattern in its explanation.
+This structured instruction, rather than relying on the LLM to infer the significance
+of fleet data from raw peer lists, produces more consistent severity calibration across
+different model versions.
+
+=== LLM Integration, Output Schema, and Fallback
+
+The LLM client is initialised with:
+
+```python
+self.llm = init_chat_model(
+    model, model_provider="ollama", temperature=0, format="json"
+)
+```
+
+`temperature=0` produces deterministic outputs for identical inputs, making
+investigations reproducible and making it easier to distinguish model-introduced variance
+from genuine signal changes.
+`format="json"` enables Ollama's grammar-constrained decoding, which forces the model
+to emit syntactically valid JSON regardless of how verbose its base response tendency
+is.
+`_strip_code_fence()` handles the residual case where a model wraps its JSON in a
+markdown code block despite the constraint.
+
+The expected response is validated into `AgentDecision`:
+
+```python
+class AgentDecision(BaseModel):
+    explanation: str
+    severity: str          # "low" | "medium" | "high"
+    recommended_scans: list[ScanRecommendation]
+    recommended_actions: list[str]
+```
+
+where each `ScanRecommendation` carries a `type` (one of `nmap`, `traceroute`,
+`tcpdump`) and a `reason` string.
+
+Any exception during the LLM call, Ollama unavailable, JSON parse failure, network
+timeout, routes to `_rule_based_fallback()`.
+The fallback assigns severity by score thresholds (below 4.0 → low, 4.0–7.0 → medium,
+above 7.0 → high) and inspects the set of fired events to select relevant scan
+recommendations: a peer that fired `arp_spoofing_detected` receives a tcpdump recommendation.
+The explanation is prefixed `[Rule-based fallback — LLM unavailable]` so operators can
+distinguish fallback reports from LLM-produced ones.
+This ensures FR15 (investigation always completes) regardless of whether Ollama is
+running.
+
+=== Automated Follow-up Scans and Cryptographic Anchors
+
+`_build_auto_identity_checks()` adds `ssh_hostkey` and `ssl_cert` recommendations to
+every investigation that involves a peer with SSH or HTTPS ports open, unconditionally:
+
+```python
+# Always run cryptographic identity checks for peers with SSH/HTTPS ports open
+# — these catch service-mimicry evasion that LLM may not know to request.
+auto_checks = self._build_auto_identity_checks(peer, decision.recommended_scans)
+all_recs = list(decision.recommended_scans) + auto_checks
+```
+
+This is hardcoded detection logic outside the LLM path.
+A sophisticated attacker can construct a device that perfectly mimics the victim's OS
+fingerprint, port profile, MAC address, and TTL baseline.
+What it cannot spoof without the victim's private key is the SSH host key fingerprint.
+Cryptographic anchors are therefore the highest-confidence identity check available, and
+deferring their execution to LLM discretion would create an evasion path.
+
+`_execute_scans()` dispatches to five scan types.
+`nmap` re-scans the target and re-ingests the result into `PeerStore` via
+`NmapParser` and `add_or_update_peer()`, keeping the stored fingerprint current after
+investigation.
+`traceroute` and `tcpdump` run as subprocesses; their output is recorded in the report
+but does not mutate `PeerStore`.
+`ssh_hostkey` runs `nmap --script ssh-hostkey`, regex-parses all `SHA256:...`
+fingerprints from the script output, and calls `peer_store.ingest_ssh_hostkeys()`.
+On first call the fingerprints are stored as the trusted baseline; on subsequent calls
+any difference fires `ssh_host_key_changed` (+3.0 to suspicion score).
+The scan result output is annotated with `[KEY CHANGED on ports [22]]` when a change is
+detected, making the signal visible in the report without requiring the reader to compare
+raw nmap XML.
+`ssl_cert` follows the same pattern using `nmap --script ssl-cert` and
+`peer_store.ingest_ssl_cert()`, firing `ssl_cert_changed` (+2.0) on fingerprint change.
+
+The choice of Phi-4 14B as the default model reflects a balance between
+reasoning quality and local inference speed.
+During development, Mistral 7B and Llama 3.1 8B were evaluated on the same
+multi-signal investigation prompts; both produced correct severity verdicts on single-
+event cases but showed weaker reasoning on composite cases where OS change, port drift,
+and fleet context occurred simultaneously.
+Phi-4 consistently named the relevant attack pattern and produced fleet-aware
+explanations.
+Running locally via Ollama means no investigation data leaves the monitored subnet,
+satisfying the air-gap requirement and eliminating the latency and availability risk of
+an external API.
+
+== Autonomous Remediation <remediation>
+
+`Remediator` is the final stage of each tick.
+It receives an `InvestigationReport` from `SuspiciousAgent`, evaluates a deterministic
+guard chain, and — if all guards pass — issues or logs an iptables block.
+The LLM is not in the authorisation path: the severity field in the report informs guard
+3, but a rule check, not the LLM, decides whether to act.
+
+=== Guard Chain and Enforcement Modes
+
+`evaluate()` applies five guards in sequence; all must pass before a `BlockAction` is
+constructed and returned:
+
++ *Never-block whitelist.* Both IP and MAC are checked against `never_block`, a
+  `frozenset` built once at `Remediator.__init__()` from config.
+  Operators should include the gateway and the monitoring host itself.
+  Frozenset membership is O(1) and immutable after construction.
++ *Score floor.* `suspicion_score >= block_confidence_floor` (default 5.0).
+  This is intentionally above the 3.0 investigation threshold: a peer must accumulate
+  further evidence after triggering LLM investigation before becoming block-eligible.
++ *Severity gate.* `severity.lower() == "high"`.
+  The comparison is a deterministic string check against the `InvestigationReport`
+  field; the LLM (or fallback) populates that field, but it cannot bypass the other
+  four guards.
++ *No active block.* `_is_active_block()` scans `blocks.jsonl` for records where
+  `executed=True`, `unblocked_at=None`, and `expires_at > now` for the same IP.
+  Prevents double-blocking a peer whose block has not yet expired.
++ *IP available.* At least one IP must be resolvable from the peer record; volatile
+  peers with no confirmed IP are skipped.
+
+When all guards pass, `evaluate()` constructs a `BlockAction` containing the two
+iptables command sequences and an expiry timestamp:
+
+```python
+block_cmds = [
+    ["iptables", "-I", "INPUT",  "-s", ip, "-j", "DROP"],
+    ["iptables", "-I", "OUTPUT", "-d", ip, "-j", "DROP"],
+]
+expires_at = now + timedelta(hours=cfg.block_ttl_hours)
+```
+
+`-I` (insert) places the DROP rule at the head of the chain, preventing a downstream
+ACCEPT rule from overriding it.
+Both INPUT and OUTPUT chains are targeted to block inbound traffic from the suspect
+device and prevent any outbound exfiltration to it.
+
+`act()` dispatches to one of three mode handlers.
+Root privilege is checked once at `__init__()`: if `enforce` mode is requested but
+`os.geteuid() != 0`, the mode is silently downgraded to `dry_run` with an error log
+entry.
+The downgrade is unconditional — not retried per call — so misconfigured deployments
+fail safely rather than intermittently.
+
+- *`dry_run`* (default): logs the would-be iptables commands and appends a
+  `BlockRecord(executed=False)` to `blocks.jsonl`.
+  No system state is modified.
+- *`confirm`*: prints the block candidate — IP, score, reason, expiry, and the exact
+  commands — to stdout and calls `input("Execute? [y/N]")`.
+  `EOFError` and `KeyboardInterrupt` both default to `"n"`, ensuring that
+  non-interactive sessions (SSH without a TTY, piped input) never accidentally confirm
+  a block.
+  A `"y"` response delegates to `_enforce()`.
+- *`enforce`*: runs the iptables commands via `subprocess.run()`, appends
+  `BlockRecord(executed=True)` on success or `BlockRecord(executed=False)` on failure.
+
+The `reason` field stored in `BlockRecord` is built from the last five identity events
+on the peer, falling back to the first 120 characters of the LLM explanation.
+It is human-readable context for the audit log and is never passed to iptables.
+
+=== Block TTL, Audit Log, and Atomic Rewrite
+
+`unblock_expired()` is called at the end of each daemon tick, after `act()`.
+It reads all records from `blocks.jsonl`, identifies those where
+`executed=True`, `unblocked_at=None`, and `expires_at <= now`, runs the stored
+`unblock_cmds`, stamps `unblocked_at = now`, and rewrites the file.
+
+The JSONL file uses two write strategies depending on the operation.
+Appending a new record uses `_append_record()` — a single-line write that cannot
+produce a partial file.
+Updating existing records (to set `unblocked_at`) requires a full rewrite;
+`_rewrite_records()` performs this atomically:
+
+```python
+with tempfile.NamedTemporaryFile(mode="w", dir=dir_, delete=False, suffix=".tmp") as tmp:
+    for record in records:
+        tmp.write(record.model_dump_json() + "\n")
+tmp_path.replace(self._blocks_path)
+```
+
+`Path.replace()` is an atomic rename on POSIX systems: if the daemon is terminated
+between the write and the rename, `blocks.jsonl` is left intact and the orphaned `.tmp`
+file is harmless.
+Without this guarantee, a crash during rewrite could truncate the audit log, causing
+`_is_active_block()` to miss an active block entry on the next tick and issue a
+duplicate block.
+
+Together, the guard chain and TTL expiry implement the complete block lifecycle:
+a peer transitions from eligible → blocked (or dry-run logged) → auto-unblocked at TTL
+expiry, with every decision — including declined `confirm` prompts and downgraded
+`dry_run` records — written to `blocks.jsonl` as a tamper-evident append-only audit
+trail.
+
+== Configuration and Extensibility <configuration>
+
+All thresholds, weights, and operational parameters are consolidated in a single
+`PeerWatchConfig` Pydantic model defined in `config.py`.
+Every field carries a typed default and an inline `description` kwarg that doubles as
+schema documentation:
+
+```python
+port_jaccard_threshold: float = Field(
+    default=0.6,
+    description="Minimum Jaccard similarity between port sets before flagging drift",
+)
+remediation_mode: Literal["dry_run", "confirm", "enforce"] = Field(
+    default="dry_run",
+    description="dry_run: log only | confirm: prompt | enforce: execute (requires root)",
+)
+```
+
+`PeerWatchConfig` inherits from `BaseModel`, not `BaseSettings`: there is no environment
+variable resolution.
+Configuration is always loaded from an explicit JSON file path via `load_config()`,
+which handles three cases — `None` or missing file returns a fresh instance with all
+defaults; a present file is parsed with `json.load()` and validated through
+`PeerWatchConfig(**data)`.
+Pydantic validation runs at construction time, so a misconfigured file (wrong type,
+`remediation_mode: "auto"`, negative threshold) raises a `ValidationError` before the
+daemon starts rather than at the point of first use.
+The `Literal` constraint on `remediation_mode` is a particularly useful type-level
+guard: it makes three semantically distinct operating modes an exhaustive, validated
+enum rather than a convention-dependent string.
+
+All components receive the config instance as a constructor argument; there is no global
+config state.
+`PeerStore`, `FleetCorrelator`, `Remediator`, and `SuspiciousAgent` each hold a
+reference to the same `PeerWatchConfig` object, which means tuning a threshold in
+`config.json` and restarting the daemon propagates the change everywhere without
+modifying any detection logic.
+
+Adding a new passive or active detection signal follows a three-step extension path.
+First, define the event name string and call `peer.record_event()` with it at the
+detection site in `peer_store.py`.
+Second, add a typed `float` field to `PeerWatchConfig` with a conservative default and
+description.
+Third, add a scoring case in `_check_incoming_fingerprint()` (or the relevant
+`ingest_*()` method) that reads the new weight from `self._cfg`.
+No changes to `FleetCorrelator` or `SuspiciousAgent` are required unless the new signal
+warrants a fleet pattern — in which case a single tuple is added to the `_PATTERNS`
+list in `fleet_correlator.py` alongside the corresponding `int` min-peers field in
+config.
+This separation of signal definitions, weights, and pipeline orchestration keeps the
+system extensible without requiring broad refactors.
 
 #bibliography(
   "refs.bib",
