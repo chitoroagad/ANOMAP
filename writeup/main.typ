@@ -266,7 +266,7 @@ The system is designed for deployments where the operator is also the
 administrator, home users and small offices, not for SOC environments where
 dedicated appliances and analyst teams are available.
 
-== Approach
+== Approach <approach>
 
 PeerWatch was developed iteratively across three phases, each adding a new
 detection dimension while preserving the correctness of the previous ones.
@@ -421,8 +421,8 @@ frequently affect multiple hosts in the same network concurrently.
 The distinction matters for detection: a single device showing OS fingerprint drift is
 consistent with a firmware update; four devices showing simultaneous OS drift is not.
 
-Fleet-level patterns observable in real intrusions include gateway substitution campaigns
-, where the attacker poisons ARP caches across multiple hosts simultaneously to redirect
+Fleet-level patterns observable in real intrusions include gateway substitution campaigns, where
+the attacker poisons ARP caches across multiple hosts simultaneously to redirect
 all subnet traffic, subnet-wide route shifts produced by compromising the default gateway,
 and identity sweeps where multiple devices are replaced in the same window to reduce
 single-device anomaly visibility.
@@ -704,7 +704,7 @@ security operations teams at scale.
 
 Deploying LLMs in security contexts introduces a specific risk: indirect prompt
 injection @promptinjection.
-Where an LLM processes data originating from an adversarially controlled source,
+Where an LLM processes data originating from an adversary controlled source,
 packet payloads, device-reported hostnames, service banners, an attacker can embed
 instructions that manipulate the model's output.
 Greshake et al. demonstrate this against several deployed LLM-integrated applications, // Fix reference
@@ -722,6 +722,234 @@ strings.
 The model operates in an explanation role, producing a structured investigation report;
 it plays no part in the detection or scoring decision.
 This design adds interpretability without introducing a new attack surface.
+
+== Tools and Libraries
+
+This section introduces non-obvious tool choices and the rationale behind each.
+Per the scope stated in @approach, PeerWatch targets hardware a SOHO administrator
+already owns; tool selection reflects that constraint throughout.
+
+=== Active Scanning: nmap
+
+Nmap @nmap is the active scanning engine for all device discovery and fingerprinting.
+The choice warrants justification against two faster alternatives.
+
+Masscan @masscan is capable of scanning the entire IPv4 address space in under six minutes but
+performs only port discovery: it carries no OS fingerprint database, no service version
+detection, and produces no OS confidence scores.
+On a /24 subnet scanned every five minutes, scan speed is irrelevant; fingerprint depth
+is not.
+ZMap @zmap is an internet-scale single-packet scanner with the same limitation.
+Both tools are optimised for breadth; nmap is optimised for depth, which is what
+per-device identity tracking requires.
+
+Nmap's value in this context is threefold.
+Its OS detection engine matches response profiles against a database of approximately
+5,000 fingerprints, returning both a matched OS family and a confidence score that
+PeerWatch records alongside the result.
+Service version detection via banner-grabbing identifies the application behind each
+open port, enabling service-type drift to be detected independently of port number.
+Structured XML output carries host metadata, port state, service attributes, and OS
+match candidates in a single machine-readable document, which PeerWatch's parser
+(`src/peerwatch/parser.py`) consumes directly rather than relying on a thin wrapper
+library: full control over confidence fields and timing data is preserved.
+
+=== Passive Capture: Scapy
+
+Passive fingerprinting requires live packet capture with per-field access to ARP, IP,
+and TCP headers.
+Four Python libraries were evaluated.
+
+*Raw libpcap via ctypes.*
+Libpcap @libpcap is the standard C library for low-level packet capture on POSIX
+systems; it provides a file descriptor over a network interface in promiscuous mode
+and a BPF (Berkeley Packet Filter) compilation interface for pushing kernel-level
+packet filters to the capture path.
+BPF filters are boolean expressions over packet fields (i.e.
+`arp or (tcp and not port 22)`) that are compiled to a bytecode program executed
+in the kernel before any packet reaches userspace, reducing the volume of data
+Python must handle.
+Accessing libpcap from Python requires ctypes, the standard library module for
+calling C shared libraries via foreign function interface without writing a C
+extension.
+The combination provides maximum throughput but demands significant boilerplate:
+manual struct layout, pointer arithmetic, and per-protocol field extraction.
+Appropriate for a production high-throughput capture engine, but not for a research
+implementation where correctness and readability matter more than throughput on a LAN at the scale
+we are targeting.
+
+*Pyshark.*
+Pyshark @pyshark wraps tshark @wireshark — the command-line version of Wireshark,
+a widely used protocol analyser — as a subprocess, feeding it packets and
+deserialising its JSON output per packet.
+The subprocess boundary introduces external process overhead and serialisation cost
+on every packet; suitable for offline PCAP (packet capture file) analysis, not for
+real-time per-packet processing in a daemon loop.
+
+*Dpkt.*
+Dpkt @dpkt is efficient for offline PCAP file parsing with a clean Python API, but
+its live capture support is limited, and it is less expressive than scapy for protocol
+composition or custom layer access patterns.
+
+*Scapy.*
+Scapy @scapy is a Python-native packet library where each protocol layer is a
+first-class Python object, and field access is direct
+(`pkt[ARP].psrc`, `pkt[IP].ttl`, `pkt[TCP].window`) exactly what passive
+fingerprinting requires.
+It supports BPF filter compilation at the capture level, limiting what reaches
+Python-level handling.
+Scapy is established in security research with broad protocol coverage and active
+maintenance.  // TODO: maybe reference
+The expressiveness advantage over alternatives outweighs the modest throughput
+overhead at LAN traffic volumes.
+
+=== LLM Integration: Ollama, Phi-4, and LangChain
+
+Three related choices form the LLM integration layer.
+
+*Ollama* @ollama is a local inference server that runs quantised open-weights models
+on commodity hardware via a REST API compatible with the OpenAI client interface.
+It was selected over direct cloud API providers (OpenAI, Anthropic) because network
+monitoring context, even in summarised form, must not leave the monitored subnet.
+An air-gapped deployment must remain functional with no outbound connections; Ollama
+satisfies this constraint without code changes.
+
+*Phi-4* (Microsoft, 14B parameters) is the default model.
+At 4-bit quantisation it requires approximately 8 GB of RAM, within reach of a dedicated
+monitoring device the administrator already owns.
+It was selected over Llama 3 8B (lower resource requirement but weaker structured JSON
+output reliability observed during development) and Mistral 7B (similar tradeoff) on
+the basis of structured output quality and instruction-following consistency, both
+critical for producing well-formed `InvestigationReport` JSON on every invocation.
+The MIT licence is compatible with the project's open-source goals.
+The model is configurable; any Ollama-supported model can be substituted via
+`config.json`.
+
+*LangChain* @langchain provides the `format="json"` grammar-constrained generation
+interface, ensuring the model produces valid JSON regardless of content, enabling
+direct deserialisation into a typed Pydantic schema.
+The alternative of raw HTTP to Ollama's `/api/generate` endpoint was rejected because
+LangChain's structured output handling, retry logic, and streaming/non-streaming
+abstraction are non-trivial to reimplement correctly; the investigation report schema
+is validated against a Pydantic model on deserialisation, and the integration between
+LangChain's structured output and Pydantic's validation is the key value.
+If Ollama is unavailable, `SuspiciousAgent` falls back to rule-based severity
+assignment without invoking LangChain, the dependency is isolated to the LLM path.
+
+=== Configuration and Validation: Pydantic
+
+All scoring weights, thresholds, and daemon settings are declared in a single Pydantic
+`PeerWatchConfig` model @pydantic.
+Pydantic was chosen over plain dicts or dataclasses for three reasons: automatic type
+coercion (a JSON string `"3.0"` is coerced to `float` transparently), field-level
+validation with informative error messages on misconfiguration (a user who sets
+`suspicion_threshold: "high"` receives an immediate type error rather than a runtime
+crash deep in the scoring engine), and self-documenting field types and defaults.
+
+The `config.example.json` pattern documents all fields with their defaults; users copy
+it to `config.json` and override only what they need.
+`model_validate` handles partial configs, unset fields use the declared defaults.
+Every component that consumes a threshold receives it from the same config object,
+eliminating scattered magic numbers and the risk of drift between independently
+maintained constants.
+
+== Evidence Accumulation and Anomaly Scoring
+
+The signals described in @device-fingerprinting are individually noisy: a single TTL deviation
+is consistent with a transient routing change; a single OS fingerprint shift is
+consistent with a firmware update.
+Turning noisy per-signal observations into reliable detection requires a principled
+accumulation model.
+This section establishes the theoretical basis; Chapter 4 describes the implementation. // TODO: cross-reference
+
+=== Weighted Scoring
+
+Not all signals carry equal evidential weight.
+A changed SSH host key is near-certain evidence of server substitution; a Jaccard
+port profile drift below 0.6 is consistent with routine service changes.
+Assigning uniform weight to all signals would cause low-evidence events to dominate
+the score when they fire frequently, drowning higher-confidence signals in noise.
+
+Axelsson @axelsson demonstrates that in intrusion detection systems the false positive
+rate of individual signals has an outsized effect on overall system utility: even at
+high true positive rates, a signal with a 1% false positive rate will produce more
+false alerts than true ones on a typical network where attacks are rare.
+The practical implication is that signal weights should reflect each signal's
+discriminative power: its ability to distinguish attack from benign change in the
+target deployment.
+PeerWatch assigns weights by evidential strength: cryptographic anchor changes (+3.0
+for port/protocol mismatch, +3.0 for SSH host key change) carry far more weight than
+heuristic signals (+0.5 for Jaccard drift, +0.5 for MAC conflict) that fire routinely
+under legitimate operation.
+
+=== Signal Compositing
+
+Independent signals with low individual discriminative power can be combined to achieve
+high discriminative power.
+If two signals each have a 10% false positive rate and fire independently, the joint
+probability of both firing simultaneously on a benign event is approximately 1%,
+a tenfold reduction in false positive rate with no loss of true positive rate for attacks
+that trigger both.
+
+This compositing effect is the formal justification for PeerWatch's threshold design:
+an OS fingerprint drift alone may not cross the investigation threshold; OS drift
+combined with TTL deviation and port profile change in the same tick reaches the
+threshold while remaining unlikely under benign conditions.
+Treating signals as independent is a conservative approximation, in reality, correlated
+signals (e.g., OS change and TTL change both caused by device substitution) provide
+less additional evidence than independent signals would, so the approach underestimates
+joint evidence rather than overstating it.
+
+=== Exponential Decay and the Cold-Start Period
+
+A device that triggers anomaly events during a legitimate firmware update should not
+remain permanently penalised once the update is complete and the new baseline is stable.
+Exponential decay, where the suspicion score halves every $T$ days, implements a
+forgetting mechanism: unreinforced anomalies fade over time without a hard reset.
+Event-window approaches that reset scores after a fixed period produce cliff effects
+(a device near the window boundary retains full score; one just past it retains none);
+continuous decay avoids this discontinuity.
+The half-life parameter (`suspicion_half_life_days`, default 3.5 days) is tunable
+to the deployment context.
+
+The cold-start problem, first observed in recommender systems and fraud detection,
+applies directly to device identity tracking.
+A device seen for the first time has no baseline; scoring drift against a single
+observation produces high false positive rates on legitimate newly-discovered devices.
+PeerWatch withholds scoring for the first `baseline_min_scans` observations (default 5),
+recording events without contributing to the suspicion score until a stable baseline
+is established.
+
+=== Threshold Calibration
+
+The investigation threshold determines the operating point on the precision-recall
+curve.
+Lowering the threshold increases true positive rate at the cost of false positive rate;
+raising it reduces false alerts at the risk of missed detections.
+Axelsson @axelsson shows that for realistic base rates of attacks on a typical network,
+even modest false positive rates render a detection system impractical; an alert that
+fires ten times per day on a clean network will be ignored within a week, eliminating
+any security value.
+
+Threshold calibration is therefore not a parameter to set once and forget but a
+deployment-specific tradeoff between operator tolerance for false alarms and the
+acceptable miss rate for real attacks.
+Chapter 5 characterises PeerWatch's operating point empirically under both simulated  // TODO: Cross-reference
+attack traffic and clean-traffic conditions, providing the data an operator needs to
+adjust the threshold for their specific environment.
+
+This chapter has established the foundations on which PeerWatch is built.
+Section 2.1 defined the threat landscape — the attack techniques that existing
+single-signal tools cannot detect and that motivate a multi-signal approach.
+Section 2.2 surveyed the fingerprinting signals available to a locally-deployed monitor,
+from active nmap probing to passive TCP stack observation and cryptographic anchors.
+Section 2.3 positioned PeerWatch against existing tools and research, identifying the
+vacant design space it occupies.
+Sections 2.4 and 2.5 introduced the tools the implementation relies on and the
+theoretical basis for combining their outputs into a coherent scoring model.
+Chapter 3 translates this context into a structured requirements specification and
+analyses it into an initial design.
+// TODO: Cross-reference
 
 #bibliography(
   "refs.bib",
