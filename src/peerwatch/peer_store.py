@@ -78,6 +78,9 @@ class Peer(BaseModel):
     # All service types ever seen per port — used to suppress oscillation false positives.
     # e.g. {8009: {"ajp13", "castv2"}} means both have been observed and neither is novel.
     known_services: dict[int, set[str]] = Field(default_factory=dict)
+    # All OS family names ever seen for this peer — suppresses oscillation false positives
+    # caused by nmap's OS heuristic being sensitive to service-level response variation.
+    known_os_families: set[str] = Field(default_factory=set)
     # Ports where a protocol mismatch has already been recorded — prevents repeated flagging.
     flagged_port_mismatches: set[int] = Field(default_factory=set)
     # Set to True once a MAC OUI vendor / OS family mismatch has been recorded.
@@ -677,10 +680,25 @@ class PeerStore:
         comparison = self._compare_fingerprints(prev.metadata, incoming_data)
         suspicion = 0.0
 
+        curr_families = _os_candidate_families(incoming_data)
+
+        # Track which events were suppressed so scoring below stays consistent.
+        suppressed: set[str] = set()
+
         for event in comparison.events:
             if event == "service_type_changed":
                 continue  # recorded per-port below
+            if event == "os_family_changed" and curr_families & prev.known_os_families:
+                # New OS candidates overlap with families seen on this peer before —
+                # nmap OS-heuristic oscillation, not a real OS change.
+                suppressed.add("os_family_changed")
+                suppressed.add("full_identity_shift")  # can't fire without os_family_changed
+                prev.known_os_families.update(curr_families)
+                continue
             prev.record_event(event, port_jaccard=comparison.port_jaccard)
+
+        # Always extend known_os_families with whatever was observed this scan.
+        prev.known_os_families.update(curr_families)
 
         for port, (old_svc, new_svc) in comparison.service_type_changes.items():
             new_type = new_svc.split("-")[0] if new_svc else ""
@@ -700,13 +718,17 @@ class PeerStore:
             )
             if not in_warmup:
                 suspicion += self._cfg.service_change_suspicion
-            if new_type:
+            if new_type and new_type != "tcpwrapped":
                 prev.known_services.setdefault(port, set()).add(new_type)
+            # Record old_type too so future oscillations back are suppressed.
+            old_type_fired = old_svc.split("-")[0] if old_svc else ""
+            if old_type_fired and old_type_fired != "tcpwrapped":
+                prev.known_services.setdefault(port, set()).add(old_type_fired)
 
         if not in_warmup:
-            if "full_identity_shift" in comparison.events:
+            if "full_identity_shift" in comparison.events and "full_identity_shift" not in suppressed:
                 suspicion += 2.0
-            if "os_family_changed" in comparison.events:
+            if "os_family_changed" in comparison.events and "os_family_changed" not in suppressed:
                 suspicion += 2.0
             if "port_profile_changed" in comparison.events:
                 suspicion += 0.5
@@ -741,8 +763,10 @@ class PeerStore:
         known_services: dict[int, set[str]] = {}
         for port, svc in data.services.items():
             svc_type = svc.split("-")[0] if svc else ""
-            if svc_type:
+            if svc_type and svc_type != "tcpwrapped":
                 known_services[port] = {svc_type}
+
+        known_os_families: set[str] = _os_candidate_families(data)
 
         now = datetime.now(timezone.utc)
         peer = Peer.model_construct(
@@ -755,6 +779,7 @@ class PeerStore:
             last_seen_at=now,
             metadata=data,
             known_services=known_services,
+            known_os_families=known_os_families,
             flagged_port_mismatches=set(),
             flagged_vendor_mismatch=False,
             metadata_history=[],
@@ -855,6 +880,8 @@ class PeerStore:
         for port, types in ghost.known_services.items():
             survivor.known_services.setdefault(port, set()).update(types)
 
+        survivor.known_os_families.update(ghost.known_os_families)
+
         survivor.record_event("peer_merged", ghost_id=ghost.internal_id)
 
         del self.peers[ghost.internal_id]
@@ -934,6 +961,11 @@ class PeerStore:
         if scan_families & compatible_os:
             return 0.0  # at least one compatible family matches
 
+        if peer.known_os_families & compatible_os:
+            # Device has previously shown a compatible OS family — this is nmap
+            # oscillation, not a genuine vendor/OS contradiction.
+            return 0.0
+
         # Genuine mismatch
         peer.flagged_vendor_mismatch = True
         peer.record_event(
@@ -970,18 +1002,25 @@ class PeerStore:
         if not os_match:
             events.append("os_family_changed")
 
-        # 2. Port set — Jaccard similarity
+        # 2. Port set — Jaccard similarity.
+        # Empty curr_ports means the device is offline or fully firewalled this scan —
+        # not a substitution attack.  Require both sides to have visible ports before
+        # penalising a profile difference.
         prev_ports = set(prev.open_ports)
         curr_ports = set(incoming.open_ports)
         port_jaccard = _jaccard_similarity(prev_ports, curr_ports)
         if (
-            prev_ports | curr_ports
-        ) and port_jaccard < self._cfg.port_jaccard_threshold:
+            prev_ports and curr_ports
+            and port_jaccard < self._cfg.port_jaccard_threshold
+        ):
             events.append("port_profile_changed")
 
-        # 3. Service type on shared ports
-        # Only the protocol type (first part of "ssh-OpenSSH") is checked — version
-        # changes within the same protocol are expected and not suspicious.
+        # 3. Service type on shared ports.
+        # Only the protocol type (first token of "ssh-OpenSSH") is compared — version
+        # changes within the same protocol family are not suspicious.
+        # "tcpwrapped" is treated as an unidentified service (nmap fingerprinting
+        # failure) and excluded from comparison to prevent scan-quality artefacts from
+        # producing false-positive service-change events.
         shared_ports = prev_ports & curr_ports
         service_type_changes: dict[int, list[str]] = {}
         for port in shared_ports:
@@ -989,15 +1028,20 @@ class PeerStore:
             new_svc = incoming.services.get(port, "")
             old_type = old_svc.split("-")[0] if old_svc else ""
             new_type = new_svc.split("-")[0] if new_svc else ""
-            if old_type and new_type and old_type != new_type:
+            # Skip if either side is unidentified or a scan artefact
+            if not old_type or not new_type or old_type == "tcpwrapped" or new_type == "tcpwrapped":
+                continue
+            if old_type != new_type:
                 service_type_changes[port] = [old_svc, new_svc]
         if service_type_changes:
             events.append("service_type_changed")
 
         # 4. Full identity shift — all three dimensions changed significantly.
-        # No shared ports counts as a service change (nothing in common).
+        # Require both sides to have visible ports: an empty-port scan with an OS change
+        # is an nmap visibility gap, not a substitution attack.
         if (
             not os_match
+            and prev_ports and curr_ports
             and port_jaccard < 0.4
             and (service_type_changes or not shared_ports)
         ):

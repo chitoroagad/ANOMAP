@@ -1,10 +1,35 @@
+@misc{mscopilot,
+  author        = {{Microsoft}},
+  title         = {Microsoft Copilot for Security},
+  year          = {2024},
+  howpublished  = {\url{https://www.microsoft.com/en-us/security/business/ai-machine-learning/microsoft-copilot-security}}
+}
+@misc{googlesecurity,
+  author        = {{Google}},
+  title         = {Google Chronicle {SIEM} and {AI} Security Operations},
+  year          = {2024},
+  howpublished  = {\url{https://cloud.google.com/security/products/security-operations}}
+}
+@article{lakhina2004,
+  title         = {Diagnosing network-wide traffic anomalies},
+  author        = {Lakhina, Anukool and Crovella, Mark and Diot, Christophe},
+  journal       = {ACM SIGCOMM computer communication review},
+  volume        = {34},
+  number        = {4},
+  pages         = {219--230},
+  year          = {2004},
+  publisher     = {ACM New York, NY, USA}
+}
+@misc{teamcymru,
+  author        = {{Team Cymru}},
+  title         = {IP to {ASN} Mapping --- {DNS} and Whois Services},
+  year          = {2024},
+  howpublished  = {\url{https://www.team-cymru.com/ip-asn-mapping}}
+}
 @techreport{rfc826,
-  author        = {Plummer, David C.},
-  title         = {An Ethernet Address Resolution Protocol},
-  institution   = {IETF},
-  number        = {RFC 826},
-  year          = {1982},
-  url           = {https://www.rfc-editor.org/rfc/rfc826}
+  title         = {An ethernet address resolution protocol: or converting network protocol addresses to 48. bit ethernet address for transmission on ethernet hardware},
+  author        = {Plummer, David},
+  year          = {1982}
 }
 @article{arpspoofing,
   title         = {Man-in-the-Middle Attack to the HTTPS Protocol},
@@ -25,7 +50,6 @@
   pages         = {340--347},
   year          = {2024}
 }
-% arpwatch
 @misc{arpwatch,
   author        = {Leres, Craig and Jacobson, Van},
   title         = {arpwatch -- Ethernet/IP Address Pairings Monitor},
@@ -33,15 +57,12 @@
   howpublished  = {Lawrence Berkeley National Laboratory},
   url           = {https://ee.lbl.gov/}
 }
-% Nmap
 @book{nmap,
+  title         = {Nmap network scanning: The official Nmap project guide to network discovery and security scanning},
   author        = {Lyon, Gordon Fyodor},
-  title         = {Nmap Network Scanning},
-  year          = {2008},
-  publisher     = {Insecure.Com LLC},
-  url           = {https://nmap.org/book/}
+  year          = {2009},
+  publisher     = {Insecure}
 }
-% p0f passive fingerprinter
 @misc{p0f,
   author        = {Zalewski, Michal},
   title         = {p0f v3 -- Passive OS Fingerprinter},
@@ -55,11 +76,13 @@
   howpublished  = {\url{https://www.cisco.com/c/en/us/solutions/collateral/executive-perspectives/annual-internet-report/white-paper-c11-741490.html}}
 }
 @inproceedings{snort,
-  author        = {Roesch, Martin},
-  title         = {Snort: Lightweight Intrusion Detection for Networks},
-  booktitle     = {Proceedings of the 13th USENIX Conference on System Administration (LISA)},
-  year          = {1999},
-  pages         = {229--238}
+  title         = {Snort: Lightweight intrusion detection for networks.},
+  author        = {Roesch, Martin and others},
+  booktitle     = {Lisa},
+  volume        = {99},
+  number        = {1},
+  pages         = {229--238},
+  year          = {1999}
 }
 @misc{suricata,
   author        = {{Open Information Security Foundation}},
@@ -68,21 +91,21 @@
   howpublished  = {\url{https://suricata.io/}}
 }
 @inproceedings{zeek,
-  author        = {Paxson, Vern},
-  title         = {Bro: A System for Detecting Network Intruders in Real-Time},
-  booktitle     = {Proceedings of the 7th USENIX Security Symposium},
+  title         = {A system for detecting network intruders in real-time},
+  author        = {Bro, Paxson V},
+  booktitle     = {Proc. 7th USENIX security symposium},
   year          = {1998}
 }
 @misc{ollama,
   author        = {{Ollama}},
   title         = {Ollama -- Run Large Language Models Locally},
-  year          = {2024},
+  year          = {2026},
   howpublished  = {\url{https://ollama.com/}}
 }
 @misc{darktrace,
   author        = {{Darktrace}},
   title         = {Darktrace Enterprise Immune System},
-  year          = {2024},
+  year          = {2026},
   howpublished  = {\url{https://www.darktrace.com/products/}}
 }
 @misc{ciscosna,
@@ -94,47 +117,49 @@
 @misc{pydantic,
   author        = {Colvin, Samuel and others},
   title         = {Pydantic --- Data Validation Using Python Type Hints},
-  year          = {2024},
+  year          = {2026},
   howpublished  = {\url{https://docs.pydantic.dev/}}
 }
 @inproceedings{saddns,
-  author        = {Man, Keyu and Qian, Zhiyun and Wang, Zhongjie and Zheng, Xiaofeng and Huang, Youjun},
-  title         = {{DNS} Cache Poisoning Attack: Resurrections with Side Channels},
-  booktitle     = {Proceedings of the 2020 ACM SIGSAC Conference on Computer and Communications Security},
-  year          = {2020}
+  title         = {DNS cache poisoning attack: Resurrections with side channels},
+  author        = {Man, Keyu and Zhou, Xin'an and Qian, Zhiyun},
+  booktitle     = {Proceedings of the 2021 ACM SIGSAC Conference on Computer and Communications Security},
+  pages         = {3400--3414},
+  year          = {2021}
 }
 @misc{mitre,
   author        = {{MITRE Corporation}},
   title         = {{MITRE ATT\&CK} Enterprise Tactics, Techniques and Procedures},
-  year          = {2024},
+  year          = {2025},
   howpublished  = {\url{https://attack.mitre.org/}}
 }
 @misc{uscertTA17,
   author        = {{US-CERT}},
   title         = {{TA17-181A}: Petya/NotPetya Ransomware},
-  year          = {2017},
+  year          = {2018},
   howpublished  = {\url{https://www.cisa.gov/uscert/ncas/alerts/TA17-181A}}
 }
 @inproceedings{censys,
-  author        = {Durumeric, Zakir and Adrian, David and Mirian, Ariana and Bailey, Michael and Halderman, J. Alex},
-  title         = {A Search Engine Backed by Internet-Wide Scanning},
-  booktitle     = {Proceedings of the 22nd ACM SIGSAC Conference on Computer and Communications Security},
-  year          = {2015},
-  pages         = {542--553}
+  title         = {A search engine backed by Internet-wide scanning},
+  author        = {Durumeric, Zakir and Adrian, David and Mirian, Ariana and Bailey, Michael and Halderman, J Alex},
+  booktitle     = {Proceedings of the 22nd ACM SIGSAC conference on computer and communications security},
+  pages         = {542--553},
+  year          = {2015}
 }
 @inproceedings{iotsentinel,
-  author        = {Miettinen, Markus and Marchal, Samuel and Hafeez, Ibbad and Asokan, N. and Sadeghi, Ahmad-Reza and Tarkoma, Sasu},
-  title         = {{IoT} Sentinel: Automated Device-Type Identification for Security Enforcement in {IoT}},
-  booktitle     = {Proceedings of the 37th IEEE International Conference on Distributed Computing Systems (ICDCS)},
+  title         = {Iot sentinel: Automated device-type identification for security enforcement in iot},
+  author        = {Miettinen, Markus and Marchal, Samuel and Hafeez, Ibbad and Asokan, Nadarajah and Sadeghi, Ahmad-Reza and Tarkoma, Sasu},
+  booktitle     = {2017 IEEE 37th international conference on distributed computing systems (ICDCS)},
+  pages         = {2177--2184},
   year          = {2017},
-  pages         = {2177--2184}
+  organization  = {IEEE}
 }
 @inproceedings{zmap,
-  author        = {Durumeric, Zakir and Wustrow, Eric and Halderman, J. Alex},
-  title         = {{ZMap}: Fast Internet-Wide Scanning and Its Security Applications},
-  booktitle     = {Proceedings of the 22nd USENIX Security Symposium},
-  year          = {2013},
-  pages         = {605--620}
+  title         = {$\{$ZMap$\}$: Fast internet-wide scanning and its security applications},
+  author        = {Durumeric, Zakir and Wustrow, Eric and Halderman, J Alex},
+  booktitle     = {22nd USENIX Security Symposium (USENIX Security 13)},
+  pages         = {605--620},
+  year          = {2013}
 }
 @misc{libpcap,
   author        = {Jacobson, Van and Leres, Craig and McCanne, Steven},
@@ -151,13 +176,13 @@
 @misc{pyshark,
   author        = {Ouri, KimiNewt},
   title         = {{PyShark} -- Python Packet Parsing using tshark},
-  year          = {2014},
+  year          = {2026},
   howpublished  = {\url{https://github.com/KimiNewt/pyshark}}
 }
 @misc{dpkt,
   author        = {Song, Dug and others},
   title         = {dpkt -- Fast, Simple Packet Creation and Parsing},
-  year          = {2004},
+  year          = {2024},
   howpublished  = {\url{https://github.com/kbandla/dpkt}}
 }
 @misc{scapy,
@@ -169,23 +194,24 @@
 @misc{masscan,
   author        = {Graham, Robert David},
   title         = {masscan: Mass {IP} Port Scanner},
-  year          = {2013},
+  year          = {2026},
   howpublished  = {\url{https://github.com/robertdavidgraham/masscan}}
 }
 @misc{langchain,
   author        = {Chase, Harrison and others},
   title         = {{LangChain}: Building Applications with Large Language Models},
-  year          = {2022},
+  year          = {2026},
   howpublished  = {\url{https://github.com/langchain-ai/langchain}}
 }
 @article{axelsson,
+  title         = {The base-rate fallacy and the difficulty of intrusion detection},
   author        = {Axelsson, Stefan},
-  title         = {The Base-Rate Fallacy and the Difficulty of Intrusion Detection},
-  journal       = {ACM Transactions on Information and System Security},
+  journal       = {ACM Transactions on Information and System Security (TISSEC)},
   volume        = {3},
   number        = {3},
   pages         = {186--205},
-  year          = {2000}
+  year          = {2000},
+  publisher     = {ACM New York, NY, USA}
 }
 @misc{regresshion,
   author        = {{Qualys Threat Research Unit}},
@@ -194,16 +220,17 @@
   howpublished  = {\url{https://www.qualys.com/2024/07/01/cve-2024-6387/regresshion.txt}}
 }
 @inproceedings{mirai,
-  author        = {Antonakakis, Manos and April, Tim and Bailey, Michael and Bernhard, Matt and Bursztein, Elie and Cochran, Jaime and Durumeric, Zakir and Halderman, J. Alex and Invernizzi, Luca and Kallitsis, Michalis and others},
-  title         = {Understanding the Mirai Botnet},
-  booktitle     = {Proceedings of the 26th USENIX Security Symposium},
-  year          = {2017},
-  pages         = {1093--1110}
+  title         = {Understanding the mirai botnet},
+  author        = {Antonakakis, Manos and April, Tim and Bailey, Michael and Bernhard, Matt and Bursztein, Elie and Cochran, Jaime and Durumeric, Zakir and Halderman, J Alex and Invernizzi, Luca and Kallitsis, Michalis and others},
+  booktitle     = {26th USENIX security symposium (USENIX Security 17)},
+  pages         = {1093--1110},
+  year          = {2017}
 }
 @inproceedings{promptinjection,
+  title         = {Not what you've signed up for: Compromising real-world llm-integrated applications with indirect prompt injection},
   author        = {Greshake, Kai and Abdelnabi, Sahar and Mishra, Shailesh and Endres, Christoph and Holz, Thorsten and Fritz, Mario},
-  title         = {Not What You've Signed Up For: Compromising Real-World {LLM}-Integrated Applications with Indirect Prompt Injection},
-  booktitle     = {Proceedings of the 16th ACM Workshop on Artificial Intelligence and Security},
+  booktitle     = {Proceedings of the 16th ACM workshop on artificial intelligence and security},
+  pages         = {79--90},
   year          = {2023}
 }
 @inproceedings{alertfatigue,
@@ -211,4 +238,52 @@
   author        = {Hassan, Wajih Ul and Guo, Shengjian and Li, Ding and Chen, Zhengzhang and Jee, Kangkook and Li, Zhichun and Bates, Adam},
   booktitle     = {network and distributed systems security symposium},
   year          = {2019}
+}
+@misc{cve-2004-0699,
+  author        = {{NIST}},
+  title         = {{CVE-2004-0699}: Cisco {IOS} 802.1{X} {MAC} Address Bypass},
+  year          = {2004},
+  howpublished  = {\url{https://nvd.nist.gov/vuln/detail/CVE-2004-0699}}
+}
+@misc{cve-2019-11477,
+  author        = {{NIST}},
+  title         = {{CVE-2019-11477}: {SACK} Panic -- {TCP} Selective Acknowledgement Remote Denial of Service},
+  year          = {2019},
+  howpublished  = {\url{https://nvd.nist.gov/vuln/detail/CVE-2019-11477}}
+}
+@misc{cve-2024-4577,
+  author        = {{NIST}},
+  title         = {{CVE-2024-4577}: {PHP} {CGI} Argument Injection Remote Code Execution},
+  year          = {2024},
+  howpublished  = {\url{https://nvd.nist.gov/vuln/detail/CVE-2024-4577}}
+}
+@misc{cve-2024-7029,
+  author        = {{NIST}},
+  title         = {{CVE-2024-7029}: Command Injection in AVTech AVM1203 (IP Camera)},
+  year          = {2024},
+  howpublished  = {\url{https://nvd.nist.gov/vuln/detail/cve-2024-7029}}
+}
+@misc{cve-2023-1389,
+  author        = {{NIST}},
+  title         = {{CVE-2023-1389}: {TP-Link} Archer {AX21} Unauthenticated Command Injection},
+  year          = {2023},
+  howpublished  = {\url{https://nvd.nist.gov/vuln/detail/CVE-2023-1389}}
+}
+@misc{cve-2024-3400,
+  author        = {{CISA}},
+  title         = {{CVE-2024-3400}: PAN-OS: Arbitrary File Creation Leads to OS Command Injection Vulnerability in GlobalProtect},
+  year          = {2024},
+  howpublished  = {\url{https://security.paloaltonetworks.com/CVE-2024-3400}}
+}
+@misc{cve-2023-20198,
+  author        = {{Cisco Systems}},
+  title         = {{CVE-2023-20198}: Cisco {IOS} {XE} Software Web {UI} Privilege Escalation Vulnerability},
+  year          = {2023},
+  howpublished  = {\url{https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-iosxe-webui-privesc-j22SaA4z}}
+}
+@misc{cve-2024-3094,
+  author        = {{CISA}},
+  title         = {{CVE-2024-3094}: {XZ} Utils Backdoor -- Supply Chain Compromise of {liblzma/sshd}},
+  year          = {2024},
+  howpublished  = {\url{https://www.cisa.gov/news-events/alerts/2024/03/29/reported-supply-chain-compromise-affecting-xz-utils-data-compression-library-cve-2024-3094}}
 }

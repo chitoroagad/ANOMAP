@@ -1,0 +1,35 @@
+{
+  "scans_replayed": 322,
+  "date_range": "2026-04-17 to 2026-04-23",
+  "total_devices": 18,
+  "devices_above_threshold": 0,
+  "devices_below_threshold": 18,
+  "unique_fp_rate": 0.0,
+  "threshold": 3.0,
+  "first_alert_at_scan": {},
+  "final_scores": {
+    "A0:B5:3C:CF:E9:58": 0.0,
+    "C0:E7:BF:44:C2:3A": 0.0,
+    "F0:C8:14:7D:70:02": 0.0,
+    "E8:C7:CF:59:50:61": 0.0,
+    "d0f9e17c": 0.0,
+    "C4:9D:ED:32:A1:D1": 3.0,
+    "30:32:35:5E:7A:58": 2.5,
+    "EE:0D:11:FE:B1:83": 1.0,
+    "5E:7A:BB:F9:82:D3": 0.0,
+    "C0:23:8D:C6:A6:9E": 0.0,
+    "CA:D9:76:D5:E4:FD": 0.0,
+    "D2:10:3B:56:37:D7": 0.0,
+    "3A:30:61:8E:60:5C": 0.0,
+    "6A:3F:74:6F:64:D9": 0.0,
+    "4A:DD:11:AC:54:F0": 0.0,
+    "44:E4:EE:15:97:08": 0.0,
+    "78:AF:08:2B:16:14": 0.0,
+    "84:70:51:EC:E7:6C": 0.0
+  },
+  "event_counts": {
+    "service_type_changed": 2,
+    "os_family_changed": 2,
+    "port_profile_changed": 1
+  }
+}

@@ -55,8 +55,8 @@
           langchain-ollama
           langchain-community
           xmltodict
-          sortedcontainers
           pytest
+          pytest-cov
           scapy
           matplotlib
 

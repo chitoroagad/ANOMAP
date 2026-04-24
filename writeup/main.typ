@@ -14,10 +14,10 @@
   logo-path: "ucl_logo.png",
   title: "PeerWatch: Multi-Signal Network Anomaly Detection for Local Area Networks",
   subtitle: none,
-  date: "TODO: Day Month Year",
+  date: "24 April 2026",
   author: "Darius Chitoroaga",
   degree: "MEng Computer Science",
-  supervisor: "TODO: Supervisor's Name",
+  supervisor: "Kaan Aksit",
   distribution: "open",
 )
 
@@ -68,6 +68,7 @@
 #show figure: set block(breakable: true)
 
 #outline()
+#pagebreak()
 
 // ── Abstract (full width before columns) ───────────────────────────────────────
 #block(
@@ -77,7 +78,48 @@
   fill: luma(248),
 )[
   #text(weight: "bold")[Abstract — ]
-  // TODO: Write abstract last. Required: problem statement, approach, main result (TPR/FPR numbers), conclusion.
+  Home and small-office networks are increasingly heterogeneous and unmonitored,
+  yet the tools available to independent administrators remain limited to
+  single-signal monitors such as arpwatch or signature-based intrusion detection
+  systems that do not model per-device identity over time.
+  An attacker with local network access can substitute a device, poison ARP
+  caches, or migrate a service to an attacker-controlled host and remain entirely
+  invisible to these tools.
+
+  This project presents PeerWatch, an open-source autonomous network anomaly
+  detection daemon that maintains a persistent fingerprint identity per subnet
+  device and detects deviation across three independently observable signal
+  layers.
+  The active scanning layer runs periodic nmap scans, compares OS-candidate
+  sets, port-profile Jaccard similarity, and per-port service types against
+  stored baselines, and accumulates suspicion using a weighted scoring model
+  with exponential decay.
+  The passive observation layer supplements active scans with real-time packet
+  capture, tracking TTL consistency, ARP reply conflicts, TCP stack
+  fingerprinting, and route path stability.
+  A fleet correlation layer identifies coordinated attack patterns across multiple peers within
+  a scan tick, boosting scores when the same anomaly class co-occurs across
+  two or more devices.
+  When a device's suspicion score crosses a configurable threshold, a locally
+  hosted large language model produces a structured
+  investigation report with severity classification and recommended follow-up
+  scans; a rule-based fallback ensures operation without any cloud dependency.
+  Autonomous remediation via iptables is available under operator-controlled
+  enforcement modes.
+
+  Evaluated against nine attack scenarios drawn from MITRE ATT&CK techniques
+  and published CVEs, PeerWatch detects seven of nine (78%), with the two
+  undetected scenarios representing deliberate calibration choices rather than
+  implementation gaps.
+  A false-positive analysis over 322 nmap scans of a real home network
+  spanning 18 devices yields a false-positive rate of 0%, achieved after
+  iterative calibration of OS-oscillation suppression, service-type tracking,
+  and visibility-gap guards.
+  The fleet correlation layer is validated across 16 scenarios, demonstrating
+  that sub-threshold per-device scores become detectable under coordinated
+  attack co-occurrence.
+  The full test suite comprises 222 automated tests covering all detection
+  phases, persistence, and remediation.
 ]
 
 #v(1em)
@@ -318,17 +360,23 @@ scan parallelism.
 
 == Report Structure
 
-Chapter 2 provides the context for this work: background on LAN-layer attack
-techniques, a survey of related detection tools, and an introduction to the
-key libraries and components on which PeerWatch is built.
-Chapter 3 captures the requirements and analyses them into an initial design.
-Chapter 4 describes the design and implementation of PeerWatch in detail,
-following the three-phase structure above.
-Chapter 5 presents the testing strategy and empirical evaluation across the
-simulated attack suite and a clean-traffic false-positive measurement.
-Chapter 6 concludes with a critical assessment of the results against the
-goals set out above, and directions for future work.
-// TODO: updated this when finished
+- Chapter 2 provides context: background on LAN-layer attack techniques,
+  a survey of device fingerprinting approaches and related detection tools,
+  evidence accumulation theory, and an introduction to the libraries on which
+  PeerWatch is built.
+- Chapter 3 captures and analyses the requirements, defines use cases, and
+  maps them to the component structure.
+- Chapter 4 describes the design and implementation of all five components —
+  scan loop, `PeerStore`, passive observation layer, `FleetCorrelator`,
+  `SuspiciousAgent`, and `Remediator` — following the three-phase development
+  structure introduced above.
+- Chapter 5 presents the testing strategy, a false-positive analysis on
+  real home-network traffic, evaluation of nine attack scenarios against the
+  active-scan pipeline, fleet correlation evaluation across sixteen test scenarios,
+  LLM agent and remediation evaluation, performance characterisation, and a
+  discussion of limitations and threats to validity.
+- Chapter 6 concludes with a summary of contributions, critical evaluation
+  against each goal, and directions for future work.
 
 = Background and Context
 
@@ -386,7 +434,7 @@ produce OS fingerprinting results inconsistent with the stored baseline, a port 
 that may differ, and a TTL baseline that diverges from the established per-device average.
 
 MAC spoofing without OS replication is documented as T1564.006 @mitre.
-The limitations of MAC-only monitoring were demonstrated in CVE-2004-0699 @mitre, where device
+The limitations of MAC-only monitoring were demonstrated in CVE-2004-0699 @cve-2004-0699, where device
 identity assumptions were exploited precisely because address-layer credentials were not
 backed by any deeper identity verification.
 
@@ -404,8 +452,8 @@ T1543 (Create or Modify System Process) @mitre and US-CERT advisory TA17-181A @u
 document service persistence techniques used in documented intrusions.
 More recent examples include CVE-2024-6387 (regreSSHion @regresshion), a remote code
 execution vulnerability in OpenSSH that could enable replacement of a running SSH daemon,
-and CVE-2024-4577, where protocol-level service replacement produced detectable
-port/protocol mismatches.
+and CVE-2024-4577 @cve-2024-4577, where protocol-level service replacement produced
+detectable port/protocol mismatches.
 
 *Cryptographic identity anchors.*
 SSH servers present a host key fingerprint to clients on each connection; TLS servers
@@ -439,7 +487,7 @@ A critical property of coordinated attacks is that per-device analysis may silen
 them: if each individual device scores below the investigation threshold, no alert fires.
 Fleet-level correlation (detecting that several peers exhibit the same anomaly class
 within the same observation window) is the mechanism that closes this gap, and is
-described in detail in Section 4.x. // TODO: add cross-ref
+described in detail in @fleet-correlator.
 
 === Evasion and the Attacker's Observable Constraint <evasion>
 
@@ -453,7 +501,7 @@ Port profile can be matched by opening the same ports; service type labels can b
 by running compatible stacks; OS fingerprint can be approximated through kernel parameter
 tuning — adjusting TCP initial TTL, window size, and timestamp options.
 Scenario I // Cross Reference here
-in the evaluation (T1036.004 masquerading, CVE-2024-3094) demonstrates this
+in the evaluation (T1036.004 masquerading @mitre, CVE-2024-3094 @cve-2024-3094) demonstrates this
 boundary: an attacker who carefully mirrors the target's service profile produces a
 suspicion score of 0.0, a correctly identified limitation of the active-scanning layer.
 
@@ -477,8 +525,7 @@ Device fingerprinting derives a stable identity for a networked host from observ
 protocol behaviour, without relying on self-reported credentials.
 This section surveys the techniques PeerWatch draws on, their mechanisms, and their
 limitations.
-Chapter 4 describes how each is implemented within the pipeline.
-// TODO: add cross refernce
+@design-implementation describes how each is implemented within the pipeline.
 
 === Active Fingerprinting
 
@@ -577,13 +624,12 @@ Traceroute maps the sequence of IP hops between the monitoring host and a target
 For a LAN device with a fixed default gateway, this path is constant; a new intermediate
 hop or changed hop count indicates a routing table manipulation or gateway substitution,
 consistent with the fleet patterns described in @fleet-attacks.
-Team Cymru's IP-to-ASN mapping attributes each hop to an autonomous system; a new ASN
-in the path indicates traffic leaving via an unexpected upstream provider.
-// TODO: Add references here.
+Team Cymru's IP-to-ASN mapping @teamcymru attributes each hop to an autonomous system;
+a new ASN in the path indicates traffic leaving via an unexpected upstream provider.
 
 *MAC OUI correlation.*
 The first three octets of a MAC address identify the hardware vendor registered with the
-IEEE (the Organizationally Unique Identifier). // TODO: reference
+IEEE (the Organizationally Unique Identifier).
 Cross-checking OUI vendor against nmap-detected OS family catches a class of substitution
 neither signal alone would flag: an Apple OUI combined with a Linux OS detection indicates
 the claimed hardware identity is inconsistent with the network stack behaviour.
@@ -659,7 +705,7 @@ It is lightweight, reliable, and well-suited to the SOHO deployment model.
 Its limitation is precisely what @device-substitution establishes: it is blind to device
 substitution that does not disturb ARP bindings, to service-level impersonation, and
 to coordinated attack patterns that unfold above the ARP layer.
-XarpS and similar tools share this scope.  // TODO: reference
+XarpS and similar tools share this scope.
 
 Hardware-enforced equivalents, Dynamic ARP Inspection and DHCP snooping @dai, are
 more robust for the ARP signal specifically but require managed layer-2 switching
@@ -689,7 +735,7 @@ The two approaches are complementary rather than competitive.
 
 Statistical anomaly detection: flow entropy analysis, traffic volume baselines,
 protocol distribution modelling, underpins commercial NDR systems and has a deep
-research literature. // TODO: Reference
+research literature @lakhina2004.
 These operate at aggregate traffic level, making them sensitive to volumetric shifts
 but not to low-and-slow device substitution that preserves traffic volume while
 changing device identity.
@@ -702,7 +748,7 @@ This gap is the primary motivation for PeerWatch.
 
 The application of large language models to security operations has grown rapidly since
 the emergence of capable instruction-following models.
-Commercial products including Microsoft Copilot for Security and Google Chronicle AI // TODO: Reference
+Commercial products including Microsoft Copilot for Security @mscopilot and Google Security Operations @googlesecurity
 incorporate LLMs for alert summarisation, threat intelligence synthesis, and first-pass
 triage of SIEM events, targeting the alert fatigue problem @alertfatigue that afflicts
 security operations teams at scale.
@@ -804,7 +850,7 @@ fingerprinting requires.
 It supports BPF filter compilation at the capture level, limiting what reaches
 Python-level handling.
 Scapy is established in security research with broad protocol coverage and active
-maintenance.  // TODO: maybe reference
+maintenance.
 The expressiveness advantage over alternatives outweighs the modest throughput
 overhead at LAN traffic volumes.
 
@@ -858,15 +904,14 @@ Every component that consumes a threshold receives it from the same config objec
 eliminating scattered magic numbers and the risk of drift between independently
 maintained constants.
 
-== Evidence Accumulation and Anomaly Scoring
+== Evidence Accumulation and Anomaly Scoring <evidence-accumulation>
 
 The signals described in @device-fingerprinting are individually noisy: a single TTL deviation
 is consistent with a transient routing change; a single OS fingerprint shift is
 consistent with a firmware update.
 Turning noisy per-signal observations into reliable detection requires a principled
 accumulation model.
-This section establishes the theoretical basis; Chapter 4 describes the implementation. // TODO: cross-reference
-
+This section establishes the theoretical basis; @design-implementation describes the implementation.
 === Weighted Scoring
 
 Not all signals carry equal evidential weight.
@@ -939,7 +984,7 @@ any security value.
 Threshold calibration is therefore not a parameter to set once and forget but a
 deployment-specific tradeoff between operator tolerance for false alarms and the
 acceptable miss rate for real attacks.
-Chapter 5 characterises PeerWatch's operating point empirically under both simulated  // TODO: Cross-reference
+@testing characterises PeerWatch's operating point empirically under both simulated
 attack traffic and clean-traffic conditions, providing the data an operator needs to
 adjust the threshold for their specific environment.
 
@@ -963,7 +1008,7 @@ The introduction established that existing tools fail to detect device substitut
 and service-level impersonation attacks on home and small-office networks.
 This section states the precise technical problem an implementation must solve:
 the specific uncertainties, constraints, and failure modes from which the
-requirements in Section 3.2 are derived.  // TODO: cross-reference
+requirements in @requirements Section 3.2 are derived.
 
 The system must detect when a device observed at a given MAC or IP address in a
 previous scan is no longer the same physical or logical device.
@@ -1044,14 +1089,14 @@ The decision to block must be governed by deterministic rule-based guards that L
 output cannot override; the model's severity classification may be one guard among
 several, but the guard logic itself must be purely rule-based.
 
-== Requirements
+== Requirements <requirements>
 
 The requirements below are derived directly from the constraints identified in
 @problem-statement.
 Functional requirements specify what the system must do; non-functional requirements
 specify properties the implementation must exhibit.
 Requirements are numbered for traceability: Chapter 4 references them when describing
-design decisions, and Chapter 5 references them when describing test coverage.  // TODO: cross-reference
+design decisions, and @testing references them when describing test coverage.
 
 
 === Functional Requirements
@@ -1241,18 +1286,8 @@ invoked by the daemon when suspicion crosses the investigation threshold; it is 
 directly by the administrator.  *iptables* is a system actor that receives firewall rule commands
 from the Remediator component.
 
-#figure(
-  // TODO: insert figures/usecase.png once PlantUML diagram is rendered
-  rect(width: 90%, height: 8cm, stroke: 0.5pt)[
-    #align(center + horizon)[_Use case diagram (see source: docs/usecase.puml)_]
-  ],
-  caption: [PeerWatch use case diagram.],
-  kind: "figure",
-  supplement: "Figure",
-) <usecase-diagram>
-
 @tbl-usecases lists all ten identified use cases.  Full specifications for the three most
-security-critical cases (UC4, UC3, UC7) appear in Appendix B.  // TODO: cross-reference
+security-critical cases (UC4, UC3, UC7) appear in @appendix-usecases.
 
 #figure(
   table(
@@ -1283,14 +1318,14 @@ This design directly mitigates the indirect prompt-injection risk identified in 
 `dry_run` mode it reduces to a no-op, and in `enforce` mode it is bypassed entirely by the
 daemon.  UC9 (_Inject crafted nmap XML_) is included as an explicit use case because the injection
 interface (dropping a file into `data/raw/` between ticks) forms the basis of both the attack
-simulation test suite and the manual demonstration scenario described in Chapter 5.  // TODO: cross-reference
+simulation test suite and the manual demonstration scenario described in @testing.
 
 == Analysis <analysis>
 
 The requirements established what the system must do; this section analyses them to extract the
 information structures the system must store, the components that must exist to satisfy each
 requirement group, and the key architectural decisions that constrain the design before
-implementation begins.  These decisions are elaborated further in Chapter 4.  // TODO: cross-reference
+implementation begins.  These decisions are elaborated further in @design-implementation.
 
 === Data Model <data-model>
 
@@ -1446,10 +1481,10 @@ as the fallback, and the remediation guards are purely deterministic.  The adopt
 the LLM solely in the investigation path: it produces a structured JSON report that a human or
 the rule-based guards can act on, but it never issues a system call.
 
-Chapter 4 describes the implementation of each component in detail, starting with the daemon  // TODO: cross-reference
+@design-implementation describes the implementation of each component in detail, starting with the daemon
 scan loop and progressing through the detection pipeline in the order data flows through it.
 
-= Design and Implementation
+= Design and Implementation <design-implementation>
 
 
 == System Architecture <system-architecture>
@@ -1574,7 +1609,7 @@ once at daemon startup (before the first tick), running the capture loop indefin
 explicit join required.)
 Inter-thread communication uses a `queue.Queue`: the capture thread enqueues observation
 records and the main thread drains the queue at step 5 of each tick.
-All `PeerStore` ingestion methods acquire a `threading.Lock` (§4.3), so passive
+All `PeerStore` ingestion methods acquire a `threading.Lock` (@peer-store), so passive
 observations drained on the main thread and any future concurrent callers are safe.
 
 *Persistence model.* `PeerStore` serialises to `peer_store.json` via Pydantic's
@@ -1623,7 +1658,7 @@ privileges, `os_candidates` will be empty for every host and OS-drift events wil
 fire.
 `--osscan-guess` instructs nmap to emit all plausible OS candidates, not only its top
 pick — this is what makes the `os_candidates` multi-entry dictionary possible and is
-therefore essential to the false-positive suppression described in §4.3.
+therefore essential to the false-positive suppression described in @peer-store.
 
 A 300-second timeout guards against unresponsive hosts stalling the scan loop.
 Non-zero nmap exit codes are logged but do not abort the daemon: a failed scan produces
@@ -1668,9 +1703,9 @@ def convert_pending_xml(output_dir: Path) -> None:
 Any XML file dropped into `data/raw/` between ticks is converted and ingested in the
 next tick, without requiring root access or a live network.
 This interface is the basis of the entire attack simulation test suite described in
-Chapter 5: crafted nmap XML files representing spoofed devices, ARP poisoning scenarios,
+@testing: crafted nmap XML files representing spoofed devices, ARP poisoning scenarios,
 and service impersonation attacks can be injected and processed under controlled
-conditions. // TODO: cross-reference
+conditions.
 The injection check runs before the live nmap scan each tick, ensuring manually supplied
 files are processed in the same tick they appear.
 
@@ -1698,7 +1733,7 @@ in TCP response timing between scans can cause it to reorder "Linux" and "Micros
 Windows" as the top result for the same device.
 If PeerStore compared only the top candidate, this reordering would fire an OS-change
 event on every other scan.
-By comparing candidate sets (§4.3), PeerStore fires only when the union of known
+By comparing candidate sets (@peer-store), PeerStore fires only when the union of known
 candidates and newly observed candidates diverges, which is robust to nmap's
 non-determinism.
 
@@ -1821,10 +1856,11 @@ shared ports).
 
 === False-Positive Suppression
 
-Three distinct mechanisms address recurring false-positive patterns identified during
-development.
+Seven distinct mechanisms address recurring false-positive patterns.
+The first three are structural design choices; the remaining four target specific
+nmap artefacts identified through empirical testing on real traffic (@sec-fp-analysis).
 
-*`known_services` oscillation suppression.*
+*`known_services` bidirectional oscillation suppression.*
 `Peer.known_services` is a per-port set of service type strings that have been observed
 at least once.
 Before recording a `service_type_changed` event, the incoming service type is checked
@@ -1839,8 +1875,11 @@ if new_type in prev.known_services.get(port, set()):
 
 If the type has been seen before, the event is silently skipped and the old type is
 re-added to the set.
-Without this guard, a Chromecast whose nmap alternates between `ajp13` and `castv2` on
-port 8009 across consecutive scans would fire a service-change event every other tick.
+Critically, when `service_type_changed` does fire for the first time, _both_ the old
+and new service types are written to `known_services`, not only the new type.
+This ensures the oscillation is suppressed in both directions: a port cycling
+`icslap` → `upnp` → `icslap` fires once (on the first `icslap` → `upnp` transition),
+then silently absorbs all subsequent reversals.
 
 *Warmup period.*
 For the first `baseline_min_scans` scans (default 5), anomaly events are recorded in
@@ -1863,7 +1902,8 @@ service on a well-known port is a strong indicator of a backdoor or replacement 
 Port 443 deliberately includes both `https` and `http` since nmap may report `http` when
 TLS termination is handled transparently by a proxy.
 Service identifications of `tcpwrapped` (where nmap could not determine the protocol) are
-excluded to avoid false positives on port-forwarded services.
+excluded from comparison and never written to `known_services`, since `tcpwrapped` is an
+nmap visibility gap rather than a real service identity.
 
 *MAC OUI vendor versus OS family.*
 `VENDOR_OS_COMPATIBILITY` maps vendor name substrings to the set of OS families
@@ -1877,8 +1917,28 @@ Only vendors with a strongly constrained hardware ecosystem (Apple, Raspberry Pi
 Microsoft Xbox, Sony, Amazon) are included.
 Matching uses substring search (`keyword in vendor.lower()`) to handle vendor string
 variations in nmap output.
+An additional guard suppresses the mismatch when the peer's `known_os_families` set
+already contains a vendor-compatible family — indicating that nmap's OS probe is
+oscillating between readings rather than observing a genuine hardware contradiction.
 
-=== Scoring and Exponential Decay
+*`known_os_families` oscillation suppression.*
+Nmap's OS detection heuristic is sensitive to service-level response variation on the
+same device: a Windows machine running UPnP/SSDP may match `Microsoft` on one scan and
+`Fortinet` or `Polycom` on the next, depending on which UPnP response is in flight at
+probe time.
+`Peer.known_os_families` accumulates every OS candidate family ever observed for a peer.
+`os_family_changed` is suppressed when the incoming OS candidates intersect this set;
+the first genuine encounter with each family still fires, but repeated oscillation
+between known families is absorbed silently.
+
+*Visibility-gap guards for port and identity checks.*
+`port_profile_changed` and `full_identity_shift` are suppressed when either the
+previous or current scan has no visible ports.
+An empty port set indicates an nmap visibility gap (the device is firewalled or
+temporarily offline), not a substitution attack; comparing it against a populated
+port set via Jaccard would always yield 0.0 and trigger a false alert.
+
+=== Scoring and Exponential Decay <scoring-and-exponential-decay>
 
 Suspicion score is additive across events and ticks.
 Decay is applied at the start of each `add_or_update_peer()` call, before comparison:
@@ -1909,7 +1969,7 @@ below 1.0 in approximately one week of clean scans.
     [`mac_conflict`], [+0.5],
     [`port_protocol_mismatch`], [+3.0],
   ),
-  caption: [Active-scan suspicion score increments. Passive-capture and fleet events are covered in §4.4 and §4.5.],
+  caption: [Active-scan suspicion score increments. Passive-capture and fleet events are covered in @passive-layer and @fleet-correlator.],
   kind: "requirements",
   supplement: "Table",
 ) <tbl-score-weights>
@@ -1971,7 +2031,7 @@ Python `@dataclass`s with no scapy import.
 The second half is the capture machinery: `PassiveCaptureObserver` and
 `SniffCaptureLoop`.
 
-This separation is the key testability decision for Phase 2.  // TODO: cross-reference
+This separation is the key testability decision for Phase 2.
 Because the observation types are scapy-free, the full test suite for passive detection
 injects typed observations directly into `PeerStore.ingest_*()` without requiring a
 live network interface, elevated privileges, or scapy installed.
@@ -2111,7 +2171,7 @@ Silent hops (`* * *`) are recorded as `RouteHop` entries with `ip=None`.
   not present in the baseline.
 Any of these fires `route_changed` (+1.0 for hop changes, +1.5 for new ASN).
 
-ASN resolution uses Team Cymru's DNS-based BGP origin service @censys.
+ASN resolution uses Team Cymru's DNS-based BGP origin service @teamcymru.
 The query format is a reverse-octet DNS TXT lookup:
 `<reversed-octets>.origin.asn.cymru.com`.
 Two resolvers are tried in order: `dns.resolver` (fast, requires the `dnspython`
@@ -2514,6 +2574,1073 @@ config.
 This separation of signal definitions, weights, and pipeline orchestration keeps the
 system extensible without requiring broad refactors.
 
+= Testing and Evaluation <testing>
+
+== Testing Strategy and Approach <testing-strategy>
+
+Testing an intrusion detection system against live attacks is not feasible in a
+controlled setting: it requires root privileges, a live network, real attacker
+tooling, and produces results that cannot be independently reproduced.
+PeerWatch's injection interface (@scan-loop) was designed to address this constraint
+directly.
+`NormalisedData` is the canonical input to the entire detection pipeline; it is a
+plain Pydantic model that can be constructed in Python without invoking nmap,
+touching the network, or holding any special privileges.
+Any scan sequence, legitimate or adversarial, can be replayed deterministically
+by feeding a sequence of `NormalisedData` records to `add_or_update_peer()`.
+
+The test suite is organised into three categories.
+
+*Unit tests* exercise individual components in isolation.
+Each test constructs minimal inputs, calls one method, and asserts a single
+outcome.
+Components covered: `NmapParser`, `PeerStore` fingerprint comparison, suspicion
+decay, persistence round-trip, `Comparator`, `PeerWatchConfig` validation,
+agent rule-based fallback, and remediation guard chain.
+None of these tests invoke a subprocess, open a network connection, or require
+Ollama.
+
+*Simulation tests* replay multi-scan sequences representing documented attack
+patterns against a live `PeerStore` instance.
+A baseline device is warmed up by feeding the same `NormalisedData` record six
+times, placing the store past the `baseline_min_scans = 5` cold-start threshold
+with `suspicion_score = 0.0`, and then one or more attack scans are injected.
+The test asserts the resulting score and the specific events that fired.
+Three simulation suites cover each detection phase:
+Phase 1 (active-scan anomalies, scenarios A–I), Phase 2 (passive observation
+signals), and Phase 3 (fleet correlation patterns F1–F16).
+
+*Test infrastructure.*
+`tests/simulation/factories.py` provides two helpers.
+`scan()` builds a `NormalisedData` with sensible defaults
+(`os="Linux"`, ports `[22, 80]`, services `{22: "ssh-OpenSSH", 80: "http-Apache"}`)
+overridable by keyword argument.
+`warm_up(store, baseline, n=6)` feeds the baseline six times so the next call is
+the first that scores anomalies, the returned peer has `suspicion_score == 0.0`
+because identical scans produce no fingerprint changes and warmup suppresses
+scoring anyway.
+`pytest.approx()` is used throughout for float score comparisons, since
+floating-point accumulation across multiple increments makes exact equality
+assertions brittle.
+`PYTHONPATH = ["src"]` is configured via `pyproject.toml`, so no package install
+step is required to run the suite.
+
+*Real-LAN evaluation.*
+In addition to the simulation suite, PeerWatch was run continuously against a
+home LAN for six days, producing 322 nmap scans at
+approximately five-minute intervals.
+These scans were replayed through the detection pipeline offline to measure
+false-positive behaviour on a known-clean network.
+The results of this evaluation (18 devices observed, none of which crossed the
+investigation threshold) are analysed in @sec-fp-analysis and visualised in
+@fig-fp-score-over-time and @fig-fp-score-distribution. _Note that one device reached very close to the
+detection threshold, only not crossing due to decay._
+
+#figure(
+  image("figures/fp_score_over_time.pdf", width: 100%),
+  caption: [Per-device suspicion scores across 243 real LAN scans (clean baseline,
+    no attacks in progress). Devices above the dashed investigation threshold line
+    represent false positives. Bold traces are devices that crossed threshold; faint
+    traces stayed below.],
+) <fig-fp-score-over-time>
+
+#figure(
+  image("figures/fp_score_distribution.pdf", width: 72%),
+  caption: [Distribution of final suspicion scores across all 18 observed devices
+    after 322 scans. No device crossed the investigation threshold.],
+) <fig-fp-score-distribution>
+
+*What automated tests do not cover.*
+Three areas fall outside automated test coverage and are discussed in @sec-fp-analysis:
+LLM output quality (The model choice is not a core contribution);
+actual iptables rule insertion (subprocess is mocked; manually verified);
+and timing-dependent passive signals (TTL baseline, IP ID counter) which are
+tested via injected values rather than real packet captures.
+
+== False-Positive Analysis on Real Traffic <sec-fp-analysis>
+
+To measure false-positive rate under real conditions, 322 nmap XML scans collected
+over six days on a home LAN were replayed offline through
+the full detection pipeline.
+No attacks were in progress during collection; every alert that fires is a false
+positive by construction.
+
+*Setup.*
+Scans were taken at approximately five-minute intervals using the same nmap flags as
+the production daemon.
+The replay script feeds each scan through `NmapParser` → `add_or_update_peer()` in
+timestamp order, preserving the temporal structure of the data.
+The suspicion threshold and all scoring weights were left at their production defaults
+(`threshold = 3.0`, `suspicion_half_life_days = 3.5`).
+
+*Results.*
+Of 18 unique devices observed across 322 scans, zero crossed the investigation
+threshold, a false-positive rate of 0%.
+All devices stayed strictly below 3.0 for the entire six-day window
+(@fig-fp-score-over-time, @fig-fp-score-distribution).
+The highest final score was 2.99 (device C4:9D:ED:32:A1:D1), reflecting two
+one-time events that were subsequently suppressed by the mechanisms described below.
+
+*Root causes and fixes.*
+The initial implementation produced false positives on 7 of 17 devices (41%).
+Each root cause was identified by replaying event histories and inspecting raw nmap
+XML at the triggering scans.
+Four targeted suppression mechanisms were added iteratively and are described in full
+in @peer-store (False-Positive Suppression): `tcpwrapped` exclusion,
+visibility-gap guards for port and identity checks, `known_os_families` oscillation
+suppression, and bidirectional `known_services` recording.
+@tab-fp-progression shows the reduction in false-positive rate across each fix.
+
+#figure(
+  table(
+    columns: (auto, auto, auto),
+    align: (left, center, center),
+    table.header([Fix applied], [FP devices], [FP rate]),
+    [None (initial)], [7 / 17], [41%],
+    [+ tcpwrapped exclusion and one-sided Jaccard guard], [2 / 17], [12%],
+    [+ known\_os\_families and full\_identity\_shift guard], [1 / 18], [6%],
+    [+ bidirectional service-type suppression], [0 / 18], [*0%*],
+  ),
+  caption: [False-positive rate reduction across successive fixes on the 322-scan
+    real-LAN trace. Device count grew from 17 to 18 as the trace was extended.],
+) <tab-fp-progression>
+
+*Limitations.*
+The dataset spans a single home LAN with 18 devices over six days.
+Enterprise deployments with a larger and more diverse device population may surface
+new nmap artefacts not present in this trace.
+All four fixes are conservative: each suppresses only events with a clear
+artefact explanation, and suppression is bounded — the first genuine observation
+of each new OS family or service type still fires.
+Neither `known_os_families` nor bidirectional `known_services` adds configuration
+surface; both are populated automatically from observed data.
+
+== Attack Scenario Evaluation <sec-attack-scenarios>
+
+=== Methodology
+
+Each scenario follows the same injection protocol: a baseline device is
+warmed up by feeding six identical `NormalisedData` records to
+`add_or_update_peer()`, placing the peer past the five-scan cold-start window
+with `suspicion_score = 0.0`.
+One to three attack scans are then injected, and the resulting score and event
+set are verified.
+No live network access, root privileges, or Ollama instance are required,
+the injection interface (@scan-loop) makes every scenario deterministically
+reproducible in CI.
+
+Scenarios A–I cover the nine distinct attack patterns in the simulation suite.
+Two scenarios (E, I) are negative calibration tests: they verify that PeerWatch
+does _not_ alert on attacks it is designed to leave below threshold, confirming
+the system does not hair-trigger.
+
+#figure(
+  table(
+    columns: (auto, auto, auto, auto, auto),
+    align: (left, left, center, center, left),
+    table.header([ID], [Attack], [Score], [Detected], [Primary events]),
+    [A],
+    [IP Spoofing / ARP Poisoning],
+    [5.0],
+    [#sym.checkmark],
+    [`full_identity_shift`, `mac_conflict`],
+
+    [B],
+    [Service Backdoor],
+    [4.0],
+    [#sym.checkmark],
+    [`service_type_changed`, `port_protocol_mismatch`],
+
+    [C],
+    [MAC Spoofing / OS Mismatch],
+    [4.5],
+    [#sym.checkmark],
+    [`os_family_changed`, `full_identity_shift`],
+
+    [D],
+    [Cross-Device Identity Conflict],
+    [≥1.0],
+    [via fleet],
+    [`identity_conflict_detected`],
+
+    [E], [OS Fingerprint Spoofing (neg.)], [2.0], [—], [`os_family_changed`],
+    [F],
+    [Multi-Port Protocol Takeover],
+    [8.0],
+    [#sym.checkmark],
+    [`port_protocol_mismatch` ×2],
+
+    [G],
+    [IoT Botnet Enrollment],
+    [3.0],
+    [#sym.checkmark],
+    [`port_protocol_mismatch`],
+
+    [H],
+    [Incremental Compromise (3 scans)],
+    [6.5],
+    [#sym.checkmark],
+    [`os_family_changed`, `port_profile_changed`, `port_protocol_mismatch`],
+
+    [I], [Service Mimicry Evasion (neg.)], [0.0], [—], [none],
+  ),
+  caption: [Suspicion scores and detection outcome for scenarios A–I.
+    Scores are post-warmup and without decay (deterministic replay).
+    Threshold = 3.0.],
+) <tab-scenarios>
+
+@fig-scenario-scores visualises these scores against the investigation threshold.
+
+#figure(
+  image("figures/scenario_scores.pdf", width: 100%),
+  caption: [Suspicion scores for attack scenarios A–I (post-warmup, single tick
+    except H which accumulates over three scans).
+    Blue bars are detected; red bars are correctly-below-threshold negatives.
+    Dashed line is the investigation threshold (3.0).],
+) <fig-scenario-scores>
+
+=== Scenario Walkthrough
+
+*Scenario A — IP Spoofing / ARP Poisoning (score 5.0).*
+Models CVE-2020-25705 @saddns (off-path IP spoofing) and T1557.002
+(ARP Cache Poisoning @mitre).
+The attacker responds to the victim's IP with a different MAC, different OS
+family, and completely different port set.
+`add_or_update_peer()` resolves by IP, finds the existing peer, and compares
+fingerprints: OS families are disjoint (+2.0), Jaccard({22,80},{3389,445}) = 0.0
+< 0.6 (+0.5), and all three dimensions differ simultaneously (+2.0).
+`_update_peer()` then detects the MAC mismatch and adds +0.5 directly.
+Total: 5.0.
+The four-signal combination makes this one of the most reliable detections in
+the suite, an attacker would need to clone the MAC, spoof the OS fingerprint,
+and replicate the port profile exactly to evade all four checks simultaneously.
+
+*Scenario B — Service Backdoor (score 4.0).*
+Models T1543 (Create or Modify System Process) @mitre and TA17-181A (NotPetya lateral
+movement via port 445 with unexpected protocol) @uscertTA17.
+Post-compromise implant binds to port 22, replacing sshd with an HTTP beacon.
+`_check_port_protocol_mismatches()` identifies `http` on port 22 (expected: `ssh`)
+and fires `port_protocol_mismatch` (+3.0), the highest single-event weight.
+`service_type_changed` (+1.0) fires concurrently.
+The `flagged_port_mismatches` guard prevents the +3.0 from accumulating on every
+subsequent scan, so repeat injections leave the score unchanged at 4.0.
+
+*Scenario C — MAC Spoofing / OS Mismatch (score 4.5).*
+Models CVE-2004-0699 @cve-2004-0699 (Cisco 802.1X bypass via spoofed MAC) and
+T1564.006 (Hide Artifacts: Run Virtual Instance) @mitre.
+Attacker clones a Windows workstation's MAC onto a Linux attack box.
+The MAC resolves to the known peer, but OS candidates (`{Linux}` vs `{Microsoft}`)
+are disjoint and port sets share nothing.
+Score breakdown: `os_family_changed` +2.0, `port_profile_changed` +0.5,
+`full_identity_shift` +2.0 = 4.5.
+`service_type_changed` does not fire — comparison only covers shared ports,
+and there are none.
+
+*Scenario D — Cross-Device Identity Conflict (score ≥ 1.0, detected via fleet).*
+Models T1465 (Rogue Wi-Fi Access Points) @mitre and CVE-2019-11477 @cve-2019-11477
+(SACK Panic used to DoS a device so an attacker can claim its identity).
+Attacker simultaneously presents the MAC of device A and the IP of device B,
+triggering `_resolve_conflict()` and `identity_conflict_detected` (+1.0).
+Alone this score is below threshold.
+In the full system, fleet correlation pattern `identity_sweep` (@fleet-correlator)
+fires when two peers show `identity_conflict_detected` in the same tick, boosting
+each by +2.0.
+Scenario F12 in the fleet suite demonstrates this closure: both peers cross 3.0
+purely through fleet correlation, with neither crossing individually.
+This is the intended design: the single-signal floor avoids false positives from
+routine IP reassignment, while the fleet boost catches coordinated identity abuse.
+
+*Scenario E — OS Fingerprint Spoofing, negative (score 2.0).*
+Models T1014 (Rootkit: kernel-level OS fingerprint manipulation) @mitre.
+Attacker manipulates TCP stack to make a Linux host fingerprint as Windows while
+leaving ports and services unchanged.
+`os_family_changed` fires (+2.0), but without port or service corroboration the
+score stays at 2.0, below threshold.
+This is a deliberate calibration point.
+The multi-signal accumulation design (@evidence-accumulation) is motivated
+precisely by this scenario: OS fingerprinting is unreliable enough on real hardware
+(as confirmed by the FP analysis in @sec-fp-analysis) that an OS change alone
+should not trigger investigation.
+An operator can lower the threshold to 2.0 to catch Scenario E, but the FP
+analysis shows this would alert on every device with UPnP-driven OS oscillation.
+
+*Scenario F — Multi-Port Protocol Takeover (score 8.0).*
+Models CVE-2024-6387 (regreSSHion, unauthenticated RCE in OpenSSH ≤ 9.7) @regresshion
+and CVE-2024-4577 (PHP CGI argument injection, CVSS 9.8) @cve-2024-4577.
+After RCE, attacker replaces two services simultaneously: sshd on port 22 with
+an HTTP beacon and the web server on port 80 with an SMTP listener.
+Two `service_type_changed` events (+1.0 each) and two `port_protocol_mismatch`
+events (+3.0 each) fire in a single scan, yielding the highest score in the suite
+at 8.0.
+The `flagged_port_mismatches` guard records both ports after the first scan, so
+repeat scans do not accumulate further.
+
+*Scenario G — IoT Botnet Enrollment (score 3.0).*
+Models CVE-2024-7029 @cve-2024-7029 (AVTECH IP camera command injection, CISA KEV)
+and CVE-2023-1389 @cve-2023-1389 (TP-Link Archer AX21 injection used in Mirai campaigns) @mirai.
+Mirai-family implant opens port 22 with an HTTP-based C2 beacon alongside the
+camera's existing HTTP and RTSP ports.
+Port-set Jaccard({80,554},{22,80,554}) = 2/3 ≈ 0.67 > 0.6, so
+`port_profile_changed` does not fire.
+The sole detection is `port_protocol_mismatch` on port 22 (`http-bot` seen,
+`ssh` expected), which alone exactly hits the threshold at +3.0.
+This scenario demonstrates that `port_protocol_mismatch` catches stealthy port
+additions that the Jaccard threshold would silently pass.
+
+*Scenario H — Incremental Compromise over three scans (score 6.5).*
+Models CVE-2024-3400 @cve-2024-3400 (Palo Alto PAN-OS OS command injection, CVSS 10.0,
+CISA Emergency Directive 24-02) and CVE-2023-20198 @cve-2023-20198 (Cisco IOS XE
+web UI privilege escalation, CVSS 10.0).
+No single scan crosses the threshold; evidence accumulates across three ticks:
+
+#figure(
+  image("figures/scenario_h_progression.pdf", width: 72%),
+  caption: [Scenario H — incremental compromise score progression.
+    Each scan adds a distinct anomaly signal; threshold is crossed on scan 3.],
+) <fig-scenario-h>
+
+After warmup: scan 1 shifts OS family (Cisco → Linux, +2.0, score 2.0 — below
+threshold). Scan 2 drops a management port and adds a backdoor port; Jaccard
+drops below 0.6 (+0.5, score 2.5 — still below threshold). Scan 3 replaces sshd
+on port 22 with an HTTP C2 agent: `service_type_changed` (+1.0) and
+`port_protocol_mismatch` (+3.0) fire, bringing total to 6.5.
+The temporal accumulation model (@scoring-and-exponential-decay) is the enabling
+mechanism: each sub-threshold observation is retained and compounds.
+An attacker who spaces these steps across multiple half-lives would see the score
+decay between changes, quantifying the evasion cost in units of time.
+
+*Scenario I — Service Mimicry Evasion, negative (score 0.0).*
+Models CVE-2024-3094 @cve-2024-3094 (XZ Utils / liblzma backdoor injected into sshd)
+and T1036.004 (Masquerade Task or Service) @mitre.
+Attacker replaces OpenSSH with Dropbear SSH, a legitimate alternative that also
+identifies as `ssh` on port 22.
+nmap reports `ssh-Dropbear` instead of `ssh-OpenSSH`; PeerWatch compares only
+the first token (`ssh` = `ssh`), so no change is detected.
+Score: 0.0.
+This is a documented detection limit, not a calibration failure.
+The design choice to compare protocol types rather than implementation identifiers
+is what suppresses Scenario E false positives (a genuine OS upgrade leaves the
+service token unchanged) and the service oscillation FPs described in @peer-store.
+Catching Scenario I would require comparing implementation fingerprints
+(banner strings, protocol negotiation sequences), a Phase 2 passive-capture
+capability outside the scope of the active-scan pipeline.
+
+=== Operating Point Analysis
+
+Of the nine scenarios, seven are detected (78%), and two are correctly left
+below threshold by design.
+The two undetected scenarios represent opposite ends of the evasion spectrum:
+Scenario E (score 2.0) requires only one weak signal and is deliberately
+below threshold to contain FP rate; Scenario I (score 0.0) requires the
+attacker to stay within the same protocol family and is a fundamental limit
+of nmap service-type comparison.
+
+Combining Scenarios E and B, OS fingerprint spoofing _and_ a service backdoor,
+would yield 2.0 + 4.0 = 6.0, well above threshold.
+The practical evasion requirement is therefore not "avoid any single signal"
+but "avoid _all_ detectable signals simultaneously", which requires the attacker
+to replicate the exact OS family, port set, and service types of the target device.
+
+== Fleet Correlation Evaluation <sec-fleet-eval>
+
+Per-peer detection cannot distinguish a lone anomalous device from a coordinated
+multi-host attack: both produce the same per-peer score.
+`FleetCorrelator.analyse()` addresses this by examining the full event log
+across all peers after each ingestion tick and firing a boost when ≥N peers show
+the same anomaly class within the tick window.
+The 16 fleet scenarios (F1–F16) test this layer in isolation by injecting events
+directly via `_inject_event()`, removing any dependency on the per-peer detection
+pipeline.
+
+=== Pattern Catalogue
+
+Six coordination patterns are defined.
+@tbl-fleet-patterns lists each pattern's trigger event(s), minimum-peer
+threshold, and score boost; the implementation is described in @fleet-correlator.
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto, auto),
+    align: (left, left, center, center),
+    table.header([*Pattern*], [*Trigger event(s)*], [*Min peers*], [*Boost*]),
+    [`arp_poisoning`], [`arp_spoofing_detected`], [2], [+2.0],
+    [`identity_sweep`],
+    [`full_identity_shift` or `identity_conflict_detected`],
+    [2],
+    [+2.0],
+
+    [`route_shift`], [`route_changed`], [3], [+1.5],
+    [`os_normalisation`], [`os_family_changed`], [3], [+1.5],
+    [`ttl_shift`], [`ttl_deviation`], [3], [+1.5],
+    [`service_sweep`], [`service_type_changed`], [4], [+1.0],
+  ),
+  caption: [Fleet correlation patterns, trigger events, minimum co-occurrence
+    threshold, and suspicion boost per matching peer.],
+) <tbl-fleet-patterns>
+
+`service_sweep` carries the lowest boost (+1.0) and the highest minimum-peer
+count (4) because `service_type_changed` is the most common per-peer event;
+the per-peer `known_services` oscillation suppression does not extend to fleet
+co-occurrence, so the threshold is raised at the fleet level to compensate.
+`arp_poisoning` and `identity_sweep` carry the highest boost (+2.0) because
+ARP spoofing and identity conflicts are structurally improbable as coincidental
+simultaneous events across unrelated devices.
+
+=== Positive Detection (F1–F4, F8–F10)
+
+Scenarios F1–F4 and F8–F10 verify that each pattern fires correctly when the
+minimum-peer threshold is met.
+
+/ F1 - ARP Poisoning Campaign: Three peers simultaneously show `arp_spoofing_detected`.
+  `arp_poisoning` fires; all three peer IDs appear in `FleetEvent.peer_ids`;
+  each peer receives a +2.0 boost and a `fleet_correlation_boost` event in its
+  identity history.
+  This models a coordinated ARP cache poisoning attack (T1557.002) @mitre against
+  multiple subnet hosts in the same tick.
+
+/ F2 - Gateway Swap (Route Shift): Four peers show `route_changed` after a switch or gateway is replaced.
+  `route_shift` fires with `event_count == 4` and boost +1.5 per peer.
+  This models infrastructure-level adversary-in-the-middle insertion (T1557) @mitre,
+  where a physical or virtual device is interposed transparently between the scanner
+  and the monitored hosts.
+
+/ F3 - OS Normalisation: Three peers show `os_family_changed` in the same tick.
+  `os_normalisation` fires with boost +1.5.
+  This models an attacker selectively altering TCP/IP stack fingerprints on multiple
+  devices to blend them into a uniform OS profile, reducing the distinctiveness of
+  each individual host as a detection evasion technique.
+
+/ F4 - Identity Sweep: Two peers show `full_identity_shift` simultaneously.
+  `identity_sweep` fires with boost +2.0 per peer and the matched peer IDs equal
+  exactly the two injected peers.
+
+/ F8 - Service Sweep: Four peers show `service_type_changed` in the same tick.
+  Models coordinated backdoor service installation across multiple hosts (T1543) @mitre.
+  `service_sweep` fires with boost +1.0; the four-peer threshold ensures a
+  routine fleet-wide service restart does not trigger this pattern.
+
+/ F9 - TTL Shift (Infrastructure MITM): Three peers show `ttl_deviation` simultaneously.
+  `ttl_shift` fires with boost +1.5.
+  Models MITM device insertion that adds a transparent forwarding hop and shifts
+  the observed IP TTL for all downstream hosts (T1557) @mitre.
+
+/ F10 - Identity Sweep via Conflict: Two peers show `identity_conflict_detected` rather than `full_identity_shift`.
+  `identity_sweep` fires with boost +2.0, verifying the OR-branch in the pattern
+  definition: either trigger event is sufficient.
+  This is relevant because coordinated device-substitution attacks may manifest as
+  either a clean identity shift or a MAC/IP conflict, depending on whether the
+  attacker reuses the victim's IP address.
+
+=== Scenario D Closure — F12
+
+@sec-attack-scenarios established that a single `identity_conflict_detected`
+event yields a per-peer score of \~1.0, safely below the 3.0 investigation
+threshold.
+F12 demonstrates how fleet correlation closes this detection gap.
+
+Two peers are pre-set to `suspicion_score = 1.0` and each receives an
+`identity_conflict_detected` event in the same tick.
+Before fleet analysis both remain below threshold.
+`FleetCorrelator.analyse()` detects the `identity_sweep` pattern and applies
+a +2.0 boost to each peer, bringing both to 3.0 — exactly at the investigation
+threshold.
+
+#figure(
+  image("figures/fleet_boost_f12.pdf", width: 72%),
+  caption: [F12 — Scenario D closure. Per-peer score (1.0) lies below the
+    investigation threshold until fleet correlation applies the identity_sweep
+    boost (+2.0), crossing the threshold for both peers simultaneously.],
+) <fig-fleet-f12>
+
+This separation of concerns is deliberate.
+A standalone `identity_conflict_detected` at score 1.0 can arise from a DHCP
+lease conflict or an ARP entry collision during normal network operation.
+The fleet boost fires only when two or more peers exhibit the same event in the
+same tick, a co-temporal constraint that eliminates the coincidental-collision
+explanation and raises the minimum evidence bar for investigation to the fleet
+level.
+
+=== Guard Mechanisms (F5, F6, F7, F11)
+
+Four properties of the guard layer are verified independently.
+
+/ F5 — Min-peers gate: A single peer fires `arp_spoofing_detected` with `fleet_arp_min_peers=2`.
+  No fleet pattern fires; no `fleet_correlation_boost` event is recorded.
+  This prevents isolated gratuitous ARP replies, which are standard network
+  behaviour (e.g. a host announcing its IP after a link change), from triggering
+  a fleet alert.
+
+/ F6 — Boost cap: A peer simultaneously matches both `arp_poisoning` (+2.0) and `identity_sweep`
+  (+2.0) patterns.
+  With `fleet_boost_cap=2.5`, the first pattern's boost is applied in full (2.0)
+  and the second is clipped to 0.5, for a total of 2.5.
+  The cap prevents an attacker from engineering multiple simultaneous fleet patterns
+  to push a peer's score arbitrarily high in a single tick — fleet boosts amplify
+  per-peer evidence rather than substitute for it.
+
+/ F7 — First-tick window: `last_tick_at` is `None` (system not yet through its first tick).
+  `analyse()` returns an empty list immediately without inspecting any events.
+  No fleet pattern can fire before the event window is established, preventing
+  spurious alerts on startup when the peer store may be partially populated.
+
+/ F11 — Staleness exclusion: Three peers each have an `arp_spoofing_detected` event timestamped one second
+  before `last_tick_at`; one peer also has a current in-window event.
+  Only the single current event falls inside the window, so only one peer qualifies
+  (below `min_peers=2`) and no pattern fires.
+  This verifies that the `>=` boundary comparison correctly excludes events that
+  pre-date the current tick, preventing prior-tick anomalies from re-triggering
+  fleet patterns indefinitely (fleet echo).
+
+=== Targeting Precision and Edge Cases
+
+/ F13 — Partial fleet match: Five peers exist in the store; three receive `arp_spoofing_detected` and two
+  do not.
+  `arp_poisoning` fires; `FleetEvent.peer_ids` contains exactly the three matching
+  peers; the two unaffected peers' scores are unchanged and carry no
+  `fleet_correlation_boost` event.
+  This confirms that fleet boosts are surgically applied to contributing peers only,
+  with no collateral score inflation on innocent co-located devices.
+
+/ F14 — Multi-fire event count: Each of two peers fires `arp_spoofing_detected` twice (four events total).
+  `FleetEvent.event_count == 4` captures the intensity of the attack signal for
+  operator reporting.
+  The per-peer boost remains +2.0 regardless of event count — score is not
+  multiplied by firing frequency, so a rapidly oscillating sensor cannot inflate
+  the score arbitrarily.
+
+/ F15 — Empty tick: `last_tick_at` is set (not the first tick) but no events were recorded after it.
+  `analyse()` returns `[]` cleanly.
+  This is the expected steady-state between attack events and confirms that fleet
+  analysis imposes no overhead when the network is quiet.
+
+/ F16 — FleetEvent field completeness: A full field audit of a `FleetEvent` produced by a real `analyse()` call:
+  `peer_ids` matches the three injected peers; `ips` is sorted and complete;
+  `event_count == 3`; `suspicion_boost == 2.0`; `window_start` equals
+  `store.last_tick_at`; `window_end` falls within the test's timing bounds;
+  `description` contains both the peer count and the trigger event name.
+  These fields are consumed by the daemon's `fleet_alerts.jsonl` audit log and
+  by the `SuspiciousAgent` prompt template, so field completeness is a functional
+  correctness requirement.
+
+=== Discussion
+
+Fleet correlation adds a multiplicative detection capability orthogonal to
+per-peer accumulation.
+Attacks that individually produce sub-threshold scores, such as the identity
+conflict in Scenario D, become detectable when they co-occur across $≥N$ peers
+within a single tick.
+
+Three properties bound the fleet layer's behaviour.
+The min-peers threshold prevents individual anomalous events from triggering
+fleet patterns; the minimum is pattern-specific and tunable via `PeerWatchConfig`.
+The boost cap (default 4.0 per tick, overridden to 2.5 in F6) ensures that
+fleet evidence amplifies rather than replaces per-peer evidence: a device with
+no per-peer signal cannot be pushed to the investigation threshold by fleet
+correlation alone.
+The tick window prevents fleet echo: anomalies that fired in prior ticks do not
+re-trigger patterns in subsequent ticks.
+
+Fleet events are passed to `SuspiciousAgent.investigate_all()` so the LLM
+receives explicit coordinated-attack context.
+The system prompt's Fleet Context Guide section instructs the model to raise
+severity when a fleet pattern is present, producing more consistent severity
+classification across Phi-4 model versions.
+
+Adding a new coordination pattern requires one tuple in the `_PATTERNS` list
+in `fleet_correlator.py` and one corresponding `int` field in `PeerWatchConfig`,
+with no changes to `PeerStore`, `SuspiciousAgent`, or the daemon loop.
+
+== LLM Agent Evaluation <sec-agent-eval>
+
+`SuspiciousAgent` is invoked after fleet correlation each tick for every peer
+whose `suspicion_score` meets or exceeds the investigation threshold.
+The evaluation covers three aspects: structured output reliability, the
+rule-based fallback when Ollama is unavailable, and automatic identity checks.
+
+=== Structured Output and Fleet-Aware Severity
+
+The agent calls Phi-4 @ollama via LangChain @langchain with `temperature=0`
+and Ollama's `format="json"` grammar constraint.
+The grammar constraint forces the model to produce a JSON token stream,
+eliminating the class of failures where the model wraps its answer in prose or
+markdown fences.
+A `_strip_code_fence()` post-processor handles the residual case where
+a model revision re-introduces fences.
+
+The system prompt (@agent) specifies a fixed four-field schema:
+`explanation` (plain-English summary), `severity` (`low` / `medium` / `high`),
+`recommended_scans` (typed list), and `recommended_actions` (string list).
+The severity guide instructs the model to assign `high` for structural identity
+signals (OS family changed, full identity shift, MAC conflict) and `low` for
+ephemeral port changes.
+A Fleet Context Guide section, appended when fleet events are present, instructs
+the model to raise severity and name the fleet pattern in its explanation.
+During manual evaluation of the nine attack scenarios (@sec-attack-scenarios),
+Phi-4 consistently assigned `high` severity to Scenarios B, C, F, G, and H,
+and `medium` to Scenario D prior to fleet correlation, matching the expected
+calibration in each case.
+
+=== Rule-Based Fallback
+
+When Ollama is unreachable or the LLM invocation raises an exception, the agent
+falls back to `_rule_based_fallback()` without propagating the error to the
+daemon.
+The fallback assigns severity by score alone and recommends scans by event type.
+Twelve tests in `test_agent_fallback.py` verify this path independently of any
+running Ollama instance.
+
+#figure(
+  table(
+    columns: (auto, auto, 1fr),
+    align: (left, left, left),
+    table.header([*Condition*], [*Severity*], [*Added scan type*]),
+    [`score ≥ 7.0`], [`high`], [—],
+    [`score ≥ 4.0`], [`medium`], [—],
+    [`score < 4.0`], [`low`], [—],
+    [`route_changed` or `ttl_deviation` in history], [—], [`traceroute`],
+    [`arp_spoofing_detected` or `ttl_deviation`], [—], [`tcpdump`],
+    [always], [—], [`nmap`],
+  ),
+  caption: [Rule-based fallback severity thresholds and event-driven scan
+    recommendations. Severity and scan type rules are applied independently.],
+) <tbl-fallback>
+
+The thresholds (7.0 → high, 4.0 → medium) are deliberately conservative
+relative to the investigation threshold (3.0): a peer that barely crosses the
+threshold receives `low` severity, nudging the operator to monitor rather than
+act, while a peer at 7.0 (Scenario F) receives `high` immediately.
+This is the same calibration used by the LLM prompt's severity guide, so
+fallback and LLM outputs are consistent when evidence is unambiguous.
+
+=== Automatic Identity Checks
+
+After the LLM (or fallback) returns its `recommended_scans`, the agent
+appends `ssh_hostkey` and `ssl_cert` checks automatically for any peer with
+an open SSH or HTTPS port, regardless of whether the LLM requested them.
+This implements the cryptographic identity anchoring described in
+@agent without relying on the LLM's awareness of which ports are open.
+Results are parsed by `_parse_ssh_fingerprints()` and
+`_parse_ssl_cert_fingerprint()` and fed back to `PeerStore.ingest_ssh_hostkeys()`
+and `PeerStore.ingest_ssl_cert()`, so subsequent ticks benefit from the updated
+baseline.
+Changed fingerprints are annotated directly in the `ScanResult.output` field
+(e.g. `[KEY CHANGED on ports [22]]`) for operator-readable audit trails.
+
+=== Prompt Injection Resistance
+
+All data inserted into the LLM prompt (MAC address, IP list, event history,
+service map, fleet context) is derived from structured `PeerStore` fields, not
+from raw packet payloads or device-supplied strings.
+Device hostnames and banner strings are not included in the prompt.
+The grammar-constrained output schema further limits the attack surface: even
+if a device managed to inject adversarial text into an event detail field, the
+model's output is validated against the fixed `AgentDecision` schema before use.
+A validation failure falls through to the rule-based fallback, which does not
+read LLM output at all.
+
+== Remediation Evaluation <sec-remediation-eval>
+
+`Remediator` runs after `SuspiciousAgent` each tick, evaluating each
+`InvestigationReport` against a five-guard chain before issuing a block.
+Nineteen tests in `test_remediation.py` verify the guard chain, mode
+behaviour, and TTL expiry logic.
+
+=== Guard Chain
+
+@tbl-remediation-guards lists each guard in evaluation order.
+A peer that fails any guard produces no block action for that tick.
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto),
+    align: (left, left, left),
+    table.header([*Guard*], [*Condition*], [*Failure result*]),
+    [Never-block whitelist], [`ip` or `mac` in `never_block`], [skip],
+    [Score floor],
+    [`suspicion_score < block_confidence_floor` (default 5.0)],
+    [skip],
+
+    [Severity gate], [`severity ≠ "high"`], [skip],
+    [IP availability], [no IP address recorded for peer], [skip],
+    [Duplicate block],
+    [active (executed, non-expired) block already exists for this IP],
+    [skip],
+  ),
+  caption: [Remediation guard chain. Guards are evaluated in order; failure at
+    any guard prevents the block action from being issued.],
+) <tbl-remediation-guards>
+
+The score floor (default 5.0) is intentionally higher than the investigation
+threshold (3.0) because the investigation threshold triggers LLM analysis,
+which is cheap, while a block is a disruptive network action with operational
+consequences.
+A peer must accumulate substantial multi-signal evidence before autonomous
+blocking is authorised.
+The severity gate (`severity == "high"`) means the LLM (or fallback) must
+also classify the anomaly as high before a block fires; a fleet-boosted peer
+that the LLM rates `medium` will be investigated but not blocked.
+
+The duplicate-block guard reads `blocks.jsonl` to check whether an active,
+executed, non-expired record already exists for the target IP.
+An expired block (past `expires_at`) does not count as active, allowing
+re-evaluation after TTL expiry.
+
+=== Enforcement Modes
+
+Three modes control whether `iptables` commands are executed.
+
+#figure(
+  table(
+    columns: (auto, 1fr, auto),
+    align: (left, left, left),
+    table.header([*Mode*], [*Behaviour*], [*`executed` field*]),
+    [`dry_run`], [Log commands; write record; no subprocess], [`False`],
+    [`confirm`],
+    [Print commands; prompt operator y/n; execute if confirmed],
+    [`True` / `False`],
+
+    [`enforce`],
+    [Execute `iptables -I INPUT/OUTPUT DROP` immediately],
+    [`True`],
+  ),
+  caption: [Remediation enforcement modes and their effect on block execution.],
+) <tbl-remediation-modes>
+
+`enforce` mode requires root or `CAP_NET_ADMIN`.
+If `enforce` is configured but the daemon is not running as root,
+`Remediator.__init__()` silently downgrades to `dry_run` and logs an error —
+the system remains safe without crashing.
+Two iptables rules are inserted per block: `INPUT DROP` (drops inbound traffic)
+and `OUTPUT DROP` (drops outbound traffic to the target), preventing both
+receipt and transmission.
+
+=== TTL Auto-Unblock
+
+`unblock_expired()` is called once per daemon tick after investigation.
+It reads `blocks.jsonl`, identifies records where `executed=True`,
+`unblocked_at=None`, and `expires_at <= now`, runs the stored `unblock_cmds`
+(`iptables -D` variants), stamps `unblocked_at`, and atomically rewrites
+`blocks.jsonl` via a `tempfile` rename.
+The atomic rewrite prevents a half-written file from corrupting the audit log
+if the daemon is interrupted.
+Default block TTL is 24 hours (`block_ttl_hours`), configurable per deployment.
+
+All block decisions — including dry-run non-executions and operator-declined
+confirms — are written to `blocks.jsonl` so the full remediation history is
+available for audit independent of whether iptables was invoked.
+The LLM is not in the authorisation path: remediation decisions are
+purely rule-based.
+
+== Performance <sec-performance>
+
+PeerWatch is designed for operation on a single /24 subnet (up to 254 hosts)
+with a default scan interval of five minutes.
+This section characterises the computational cost of the three pipeline stages.
+
+=== Ingest Throughput
+
+Replaying the 322-scan real-traffic corpus used in the FP analysis
+(@sec-fp-analysis) completes in approximately 2.7 seconds of wall-clock time
+on the development machine (\~2.4 s CPU time).
+This includes XML parsing via `xmltodict`, `NmapParser` normalisation,
+`PeerStore.add_or_update_peer()` for all 18 devices, fingerprint comparison,
+`known_os_families` and `known_services` set updates, and figure generation.
+Per-scan ingest averages ~8 ms, well within the 5-minute scan interval budget.
+
+`PeerStore` keys devices by MAC address in a Python `dict`, providing O(1)
+lookup and update per device regardless of fleet size.
+The passive observation queue and identity history lists grow linearly with
+events but are bounded in practice by the scan interval: a /24 subnet
+produces at most 254 new scan results per tick.
+
+=== Test Suite Runtime
+
+The full test suite of 222 tests — covering all three pipeline phases,
+fleet correlation, persistence, and remediation — runs in under 0.5 seconds.
+This reflects that all tests operate on in-memory `PeerStore` instances
+with injected synthetic data, with no network I/O or subprocess calls (mocked
+in agent and remediation tests).
+Fast test execution supports tight development iteration without requiring a
+running Ollama instance or root privileges.
+
+=== Active Scan Latency
+
+The dominant latency term is nmap itself.
+A service-version and OS-detection scan (`nmap -sV -O --osscan-guess`)
+of a /24 subnet typically completes in 30–90 seconds, depending on host
+count, network latency, and OS detection probe retries.
+This is accommodated by the configurable `scan_interval_minutes` (default 5)
+and enforced minimum `min_scan_interval_minutes` (default 2), which rate-limits
+the daemon against accidentally overlapping consecutive scans.
+Fleet correlation, LLM invocation, and remediation evaluation each add less
+than one second of overhead per tick in the absence of Ollama latency;
+Phi-4 inference on a local GPU averages 3–8 seconds per investigation report.
+
+== Limitations and Threats to Validity <sec-limitations>
+
+=== Offline Replay and Decay Calibration
+
+The FP analysis in @sec-fp-analysis replays 322 scans sequentially in a
+single Python process.
+Suspicion decay is computed against `peer.last_seen_at`, which is set to
+`datetime.now()` (wall-clock time) at each update call.
+Because the replay completes in ~2.7 seconds, the wall-clock elapsed time
+between any two consecutive ingest calls is on the order of milliseconds,
+and the exponential decay function yields effectively zero decay.
+This means the offline replay represents a worst-case accumulation scenario:
+events that would have partially decayed over days of real operation instead
+compound fully.
+The zero false-positive rate reported in @sec-fp-analysis is therefore a
+conservative result — decay makes the deployed system less sensitive to
+event accumulation, not more.
+
+=== nmap OS Fingerprint Instability
+
+nmap OS detection depends on TCP/IP stack probes and service banner matching,
+both of which are sensitive to ephemeral factors: UPnP service response
+variants, transient port availability during the scan window, and probe
+timing.
+The UPnP oscillation observed on device C4:9D during FP analysis
+(@sec-fp-analysis) is an instance of this class: the same physical device
+produces different OS candidate sets across scans depending on which UPnP
+endpoint responds first.
+The `known_os_families` accumulation mechanism (@peer-store) addresses this,
+but it does not eliminate the underlying instability: it suppresses the
+scoring consequence of oscillations between already-known families.
+Attacks that manipulate only the OS fingerprint (Scenario E) are deliberately
+left below threshold for this reason.
+
+=== Single-Subnet Scope
+
+PeerWatch monitors one subnet configured at startup.
+`FleetCorrelator` correlates events only within that subnet's `PeerStore`.
+A coordinated attack spanning multiple subnets would appear as isolated
+per-peer anomalies in each subnet's instance, without fleet-level amplification.
+Multi-subnet deployment would require either a shared `PeerStore` or a
+federation layer aggregating per-subnet `FleetCorrelator` outputs — both
+outside the current scope.
+
+=== Absence of a Ground-Truth Attack Dataset
+
+The attack evaluation in @sec-attack-scenarios uses synthetic event injection
+against controlled `PeerStore` instances.
+No ground-truth dataset of real subnet intrusions with known attacker activity
+is available for validation.
+The nine attack scenarios are constructed from published CVE and ATT&CK
+technique descriptions, but their representativeness of real attacker behaviour
+on LAN segments is unverifiable without a controlled intrusion testbed.
+
+=== LLM Non-Determinism
+
+Phi-4 is invoked with `temperature=0`, which maximises output determinism
+for a given model version, but the model's weights and sampling behaviour
+may change across Ollama updates.
+Severity classification is therefore not strictly reproducible across
+model versions.
+The rule-based fallback (@sec-agent-eval) provides a deterministic lower bound
+on system behaviour, and the structured output schema constrains the output
+space, but the explanation text and borderline severity assignments (e.g. a
+score of 3.5 that the LLM rates `medium` vs `low`) remain version-dependent.
+
+=== Scan Interval Blind Spot
+
+PeerWatch's detection is contingent on the attacker's changes persisting across
+at least one nmap scan.
+An attacker who exploits a vulnerability, alters the device's fingerprint, and
+reverts all changes within a single scan interval (default five minutes) will
+not be detected by the active-scan pipeline.
+Passive capture (Phase 2) reduces this blind spot for TTL and ARP signals,
+which are observable in real time, but service-type and OS-family changes
+remain visible only at scan boundaries.
+
+= Conclusions and Evaluation
+
+== Summary of Contributions
+
+This project set out five goals in @approach.
+All five were delivered.
+
+*Active device fingerprinting.*
+`PeerStore` maintains a persistent identity record per device, keyed by MAC
+address (or IP for MAC-less volatile devices).
+The fingerprint comparison engine detects OS-family drift via candidate-set
+intersection, port-set drift via Jaccard similarity, and service-type changes
+on a per-port basis.
+`known_os_families` accumulation suppresses nmap OS oscillation caused by UPnP
+service response variance, eliminating the class of false positives observed
+during real-traffic validation.
+Scores decay exponentially with a 3.5-day half-life, preventing stale anomalies
+from permanently penalising a device after a legitimate change.
+The false-positive rate on a 322-scan, 18-device real-traffic corpus reached 0%.
+
+*Passive monitoring layer.*
+Six additional signals supplement active scans: TTL consistency against a
+per-peer baseline, ARP reply conflict detection, TCP stack fingerprinting,
+IP ID counter jump analysis, route hop sequence tracking, and ASN enrichment
+via Team Cymru @teamcymru.
+Each signal is observable at wire speed without active probing and catches
+attacks that leave no nmap-visible trace between scan intervals.
+
+*Fleet-level correlation.*
+`FleetCorrelator` examines the full event log across all peers after each
+ingestion tick.
+Six coordination patterns with configurable minimum-peer thresholds fire when
+the same anomaly class co-occurs across multiple hosts within the tick window.
+A boost cap prevents adversarial score inflation; a staleness boundary prevents
+prior-tick events from re-triggering patterns.
+The 16-scenario fleet test suite (F1–F16) validates all patterns and guard
+mechanisms, with F12 demonstrating the central property: two peers whose
+individual scores of 1.0 are below the investigation threshold both cross 3.0
+purely through fleet correlation when their events are co-temporal.
+
+*LLM-assisted triage.*
+`SuspiciousAgent` invokes Phi-4 @ollama via LangChain @langchain with
+grammar-constrained JSON output and `temperature=0`.
+Fleet context is injected into the prompt when coordination patterns are active.
+A rule-based fallback covers Ollama-unavailable deployments with deterministic
+severity and scan recommendations.
+Automatic SSH host-key and TLS certificate checks are appended after every
+investigation, independent of the LLM's output.
+No monitored traffic leaves the subnet; no cloud dependency or API key is
+required; the system remains functional in air-gapped deployments.
+
+*Empirical evaluation.*
+Nine attack scenarios (A–I) drawn from MITRE ATT\&CK @mitre techniques and
+published CVEs cover the full range of observable attacker behaviours: ARP
+poisoning, device substitution, service backdoor, incremental compromise, and
+service-mimicry evasion.
+Seven of nine scenarios are detected (78%); two are correctly left below
+threshold by design, representing calibration choices rather than
+implementation gaps.
+222 automated tests cover all three detection phases, fleet correlation,
+persistence, and remediation.
+
+== Critical Evaluation
+
+*Multi-signal accumulation is the core design insight.*
+No single signal is sufficient.
+Scenario E (OS fingerprint spoof alone, score 2.0) and Scenario I (service
+mimicry alone, score 0.0) are individually below threshold, but combining OS
+spoofing with a service backdoor (Scenarios E + B) yields 6.0.
+The evasion requirement is not "avoid any single signal" but "avoid all
+detectable signals simultaneously", which requires the attacker to replicate
+the exact OS family, port set, and service types of the target device.
+The fleet layer adds a further constraint: a coordinated attacker who manages
+to keep each device's per-peer score below threshold is still detectable when
+the same anomaly class appears across multiple peers in the same tick.
+
+*The false-positive calibration problem was harder than anticipated.*
+The progression from 41% to 0% FP rate across four iterative fixes reflects
+that nmap OS detection is more variable on real hardware than synthetic test
+data suggests.
+The root cause, UPnP service response variant determines which OS candidate
+set nmap produces for the same physical device, required understanding
+nmap's fingerprinting internals to diagnose and resolve.
+The `known_os_families` accumulation mechanism is the most technically
+consequential design decision made during implementation:
+a first-pass implementation that scored every OS oscillation as suspicious
+would have been unusable on real networks.
+
+*Fitness for purpose.*
+PeerWatch fills a genuine gap in the tool landscape (@tool-comparison):
+it is the only locally-deployable, open-source monitor that combines active
+fingerprinting, passive capture, and fleet-level correlation without requiring
+managed switching infrastructure or cloud connectivity.
+arpwatch @arpwatch monitors a single ARP signal; NIDS tools such as Snort
+@snort and Suricata @suricata detect content-layer threats rather than
+device-identity drift; enterprise platforms such as Darktrace @darktrace match
+or exceed PeerWatch's capabilities but require infrastructure that places them
+beyond the scope of the target deployment context.
+Within its stated scope( subnets of up to 254 hosts, operated by an
+independent administrator on existing hardware) the system is fit for purpose.
+
+*Known limitations.*
+The scan interval blind spot is fundamental: an attacker who exploits a
+vulnerability and reverts all changes within the scan interval is invisible
+to the active-scan pipeline.
+Passive capture reduces this for TTL and ARP signals but not for service-type
+or OS-family changes.
+The single-subnet scope limits fleet correlation to within one /24 block;
+a coordinated attack spanning multiple subnets appears as isolated per-peer
+anomalies in each instance.
+The absence of a ground-truth attack dataset (@sec-limitations) means the
+78% detection rate is measured against synthetic scenarios rather than recorded
+real-world intrusions.
+
+== Future Work
+
+Three directions offer the clearest return on further development effort.
+
+*Agentic investigation loop.*
+The current pipeline is one-shot: the LLM analyses evidence, recommends scans,
+and the agent executes them in sequence.
+A tighter loop would have the LLM emit structured action suggestions
+(e.g. `{"action": "traceroute", "target": "192.168.1.5"}`) that a trusted
+executor runs, with results ingested back into the passive pipeline as new
+evidence before the next tick's analysis.
+The LLM would remain outside the execution path entirely, the no-LLM-in-authorisation-path
+invariant is preserved, but investigation would become
+adaptive: a route anomaly triggers a targeted traceroute whose output updates
+the route tracker; a service change triggers a certificate fetch whose
+fingerprint is compared to the stored baseline.
+The seed of this pattern already exists in `_build_auto_identity_checks()`,
+which appends SSH and TLS checks unconditionally after the LLM step.
+
+*Sub-protocol fingerprinting.*
+Scenario I (service mimicry, score 0.0) exploits the design decision to compare
+protocol-type tokens rather than implementation identifiers.
+Tracking SSH banner strings (`ssh-OpenSSH` vs `ssh-Dropbear`) or TLS
+handshake parameters (cipher suites, extension ordering) in the passive capture
+layer would close this gap at the cost of higher baseline churn on devices that
+rotate banners across versions.
+A `known_implementations` set analogous to `known_services` and
+`known_os_families` would provide the same oscillation-suppression mechanism
+at the implementation level.
+
+*Keeping pace with evolving attacks and protocol changes.*
+PeerWatch's detection model is anchored to nmap's fingerprint vocabulary and
+the fixed set of scoring events defined at implementation time.
+Both surfaces drift: nmap's OS detection database is updated with each release,
+meaning a device's reported OS family may change across nmap versions even
+with no hardware change; new attack techniques may exploit protocol features
+or port behaviours that the current scoring weights do not capture.
+The fleet correlation patterns were derived from the MITRE ATT\&CK @mitre
+technique catalogue as it stood at time of writing; new coordinated attack
+patterns documented in future ATT\&CK updates would require corresponding
+entries in `_PATTERNS`.
+Two mechanisms would help the system remain current without manual intervention.
+First, periodic re-baselining: a scheduled mode that treats the current observed
+state as the new ground truth after a quiescence period, absorbing legitimate
+fleet-wide changes (firmware updates, OS upgrades) without accumulating
+false-positive score.
+Second, a pattern update feed: the `_PATTERNS` list and scoring weights are
+already externalised through `PeerWatchConfig`; a community-maintained
+configuration file distributed alongside nmap signatures would allow operators
+to pull updated detection rules without modifying code.
+Networking protocol evolution poses a similar challenge.
+IPv6 adoption on home subnets changes the identity keying assumptions
+(MAC-based keying remains valid but requires SLAAC and DHCPv6 awareness);
+encrypted DNS and QUIC reduce the passive-capture signal available from
+clear-text protocol exchanges.
+Adapting the passive layer to these changes is a natural extension of the
+Phase 2 architecture, which was designed for per-signal modularity precisely
+to allow new capture rules to be added without disturbing existing ones.
+
+== Closing Remarks
+
+The central premise of this project holds: an attacker constrained to a local
+network who wishes to evade multi-signal fingerprint monitoring must
+simultaneously replicate the target device's OS family, port profile, service
+types, TTL baseline, route path, and cryptographic identifiers.
+The intersection of these constraints is narrow enough that realistic attacks
+leave detectable traces in at least one signal, and the evidence-accumulation
+model ensures that individually sub-threshold signals compound into a detectable
+score over time.
+The most instructive part of the project was not the detection logic itself but
+the false-positive calibration work: the gap between expected and observed nmap
+behaviour on real hardware drove the design decisions that make the system
+deployable in practice rather than only in simulation.
+
 #bibliography(
   "refs.bib",
   title: "References",
@@ -2523,5 +3650,1000 @@ system extensible without requiring broad refactors.
 #colbreak(weak: true)
 #set heading(numbering: "A.a.a")
 
-= Artifact Appendix
-In this section we show how to reproduce our findings.
+= System Manual <system-manual>
+
+This appendix provides the technical information needed to build, configure,
+run, test, and extend PeerWatch.
+
+== Prerequisites
+
+*Nix (with flakes and new CLI enabled).*
+PeerWatch uses a Nix flake for reproducible development environments.
+Nix must be installed with the `nix-command` and `flakes` experimental features
+enabled.
+Add the following to `~/.config/nix/nix.conf` (user) or `/etc/nix/nix.conf`
+(system):
+
+```
+experimental-features = nix-command flakes
+```
+
+On NixOS, set `nix.settings.experimental-features = ["nix-command" "flakes"]`
+in your system configuration.
+
+*Ollama.*
+LLM-assisted investigation requires Ollama running locally with the
+`phi4:latest` model pulled:
+
+```sh
+ollama serve          # start the Ollama daemon
+ollama pull phi4      # download Phi-4 (~9 GB)
+```
+
+The daemon falls back to rule-based severity assignment if Ollama is
+unreachable; no features are disabled.
+
+*Root / capability requirements.*
+nmap OS detection (`-O`) requires raw socket access.
+Passive capture via Scapy requires `CAP_NET_RAW`.
+iptables enforcement requires `CAP_NET_ADMIN`.
+Run the daemon as root, or grant the specific capabilities to the Python
+interpreter.
+
+== Development Environment
+
+Two Nix dev shells are provided in `flake.nix`.
+
+```sh
+nix develop           # Python shell with all dependencies + nmap
+nix develop .#writeup # Typst shell for compiling the writeup
+```
+
+The default shell provisions a Python 3 environment with all runtime
+dependencies (`langchain`, `langchain-ollama`, `scapy`, `pydantic`,
+`python-nmap`, `xmltodict`, `matplotlib`, `pytest`) via `nixpkgs`.
+No `pip install` is required; the Nix shell is self-contained.
+
+After entering the shell, run tests with:
+
+```sh
+pytest
+```
+
+`pyproject.toml` sets `pythonpath = ["src"]` and `testpaths = ["tests"]`,
+so no additional environment variables are needed.
+
+== Configuration
+
+Copy the example config and edit for your deployment:
+
+```sh
+cp config.example.json config.json
+```
+
+Key fields:
+
+#figure(
+  table(
+    columns: (auto, auto, 1fr),
+    align: (left, left, left),
+    table.header([*Field*], [*Default*], [*Meaning*]),
+    [`subnet`], [`192.168.1.0/24`], [Subnet to scan],
+    [`scan_interval_minutes`], [`5`], [Scan cadence],
+    [`min_scan_interval_minutes`], [`2`], [Rate-limit floor],
+    [`suspicion_threshold`], [`3.0`], [Score that triggers LLM investigation],
+    [`block_confidence_floor`], [`5.0`], [Minimum score to trigger a block],
+    [`model`], [`phi4:latest`], [Ollama model name],
+    [`remediation_mode`], [`dry_run`], [`dry_run` / `confirm` / `enforce`],
+    [`never_block`],
+    [`[]`],
+    [IPs/MACs never blocked — add gateway and monitoring host],
+
+    [`baseline_min_scans`], [`5`], [Warmup scans before scoring begins],
+    [`suspicion_half_life_days`], [`3.5`], [Exponential decay half-life],
+    [`block_ttl_hours`], [`24`], [Auto-unblock TTL],
+  ),
+  caption: [Key `config.json` fields. All fields are optional; unset fields use the defaults shown.],
+) <tbl-config>
+
+Always add your gateway IP and the monitoring host's own IP to `never_block`
+to prevent self-blocking under `enforce` mode.
+
+== Running
+
+```sh
+# Production daemon — requires root for nmap OS detection
+sudo python daemon.py
+sudo python daemon.py --config /path/to/config.json
+
+# One-shot run (loads data/processed/*.json, runs comparator + agent)
+python main.py
+```
+
+The daemon logs to `logs/daemon.log` and stdout.
+Investigation reports are written to `reports/` as timestamped JSON files.
+Fleet alerts are appended to `alerts/fleet_alerts.jsonl`.
+Block decisions (including dry-run non-executions) are appended to
+`blocks/blocks.jsonl`.
+
+*Injection demo.*
+Drop a crafted nmap XML file into `data/raw/` between scans.
+The daemon calls `convert_pending_xml()` at the start of each tick and
+ingests the file as if it were a real scan result.
+
+== Persistence Files
+
+#figure(
+  table(
+    columns: (auto, 1fr),
+    align: (left, left),
+    table.header([*File*], [*Contents*]),
+    [`data/peer_store.json`],
+    [Full `PeerStore` snapshot — peers, identity histories, known services, suspicion scores],
+
+    [`alerts/alerts.jsonl`],
+    [Per-peer `InvestigationReport` records (JSON Lines)],
+
+    [`alerts/fleet_alerts.jsonl`],
+    [`FleetEvent` records from each tick (JSON Lines)],
+
+    [`blocks/blocks.jsonl`],
+    [`BlockRecord` audit log — all block decisions including dry-run and declined confirms (JSON Lines)],
+
+    [`logs/daemon.log`], [Structured log output from all pipeline stages],
+  ),
+  caption: [Persistent output files. None are committed to version control.],
+) <tbl-persistence>
+
+`peer_store.json` is written atomically at the end of each tick via a
+`tempfile` rename, so an interrupted daemon leaves the previous snapshot
+intact.
+
+== Extending the System
+
+*Adding a scoring event.*
+Define the event string and add detection logic in
+`_compare_fingerprints()` or `_check_incoming_fingerprint()` in
+`src/peerwatch/peer_store.py`.
+Add the corresponding score increment to the scoring block in
+`_check_incoming_fingerprint()`.
+Add a test in `tests/test_peer_store.py` or the appropriate simulation file.
+
+*Adding a fleet pattern.*
+Add one tuple to the `_PATTERNS` list in `src/peerwatch/fleet_correlator.py`:
+
+```python
+("pattern_name", frozenset({"trigger_event"}), "config_field_name", boost_amount),
+```
+
+Add the corresponding `int` field to `PeerWatchConfig` in
+`src/peerwatch/config.py` with a sensible default.
+Add a test scenario to `tests/simulation/test_fleet_simulation.py`.
+No other files require modification.
+
+*Adding a passive capture signal.*
+Add a new `_observe_*()` method in `src/peerwatch/packet_capture.py`
+following the pattern of existing methods (`_observe_ttl`, `_observe_arp`,
+etc.).
+Register it in the `PacketCapture` dispatch loop.
+The signal feeds into `PeerStore` via the existing passive ingest interface
+(`PeerStore.ingest_*()` methods).
+
+= User Manual <user-manual>
+
+This appendix covers everything needed to install, configure, and operate
+PeerWatch as a network administrator.
+No programming knowledge is required beyond basic command-line familiarity.
+
+== Installation
+
+```sh
+# 1. Clone the repository
+git clone https://github.com/chitoroagad/peerwatch
+cd peerwatch
+
+# 2. Enter the Nix development shell
+#    Requires Nix with flakes enabled (see System Manual, @system-manual)
+nix develop
+
+# 3. Create your config file
+cp config.example.json config.json
+```
+
+Open `config.json` in a text editor and set at minimum:
+
+```json
+{
+  "subnet": "192.168.1.0/24",
+  "never_block": ["192.168.1.1", "192.168.1.X"]
+}
+```
+
+Replace `192.168.1.0/24` with your subnet and add your gateway IP and the
+IP of the machine running PeerWatch to `never_block`.
+
+== Starting the Daemon
+
+```sh
+sudo python daemon.py
+```
+
+Root is required for nmap OS detection.
+On first start, PeerWatch runs a baseline period of 5 scans before scoring
+begins — anomaly events are recorded but no alerts are generated during this
+warmup.
+You will see log lines in `logs/daemon.log` confirming each scan:
+
+```
+INFO  Scan complete: 12 hosts discovered
+INFO  No suspicious peers found.
+```
+
+Leave the daemon running continuously.
+It rescans every 5 minutes by default (configurable via
+`scan_interval_minutes`).
+
+== Reading Alerts
+
+When a device's suspicion score crosses 3.0, PeerWatch writes an alert to
+`alerts/alerts.jsonl` and a JSON investigation report to `reports/`.
+
+*Per-device alerts* (`alerts/alerts.jsonl`) — one JSON object per line:
+
+```json
+{
+  "peer_id": "...",
+  "mac_address": "AA:BB:CC:DD:EE:FF",
+  "ips": ["192.168.1.42"],
+  "suspicion_score": 4.5,
+  "severity": "medium",
+  "explanation": "OS family changed from Linux to Windows...",
+  "recommended_actions": ["Re-scan device", "Verify physically"]
+}
+```
+
+Key fields:
+
+#figure(
+  table(
+    columns: (auto, 1fr),
+    align: (left, left),
+    table.header([*Field*], [*Meaning*]),
+    [`severity`],
+    [`low` — monitor; `medium` — investigate; `high` — likely compromise],
+
+    [`suspicion_score`],
+    [Accumulated weighted anomaly score; decays over time if no new events fire],
+
+    [`explanation`],
+    [LLM natural-language summary of what changed and why it is suspicious],
+
+    [`recommended_actions`], [Concrete steps the LLM recommends],
+    [`recommended_scans`],
+    [Follow-up scans the agent ran automatically (nmap, traceroute, tcpdump)],
+  ),
+  caption: [Key fields in a per-device investigation alert.],
+) <tbl-alert-fields>
+
+*Fleet alerts* (`alerts/fleet_alerts.jsonl`) — fired when the same anomaly
+class appears simultaneously across multiple devices:
+
+```json
+{
+  "pattern": "arp_poisoning",
+  "peer_ids": ["...", "..."],
+  "ips": ["192.168.1.10", "192.168.1.11", "192.168.1.12"],
+  "suspicion_boost": 2.0,
+  "description": "3 peers fired arp_spoofing_detected in the same tick"
+}
+```
+
+A fleet alert means a coordinated attack is likely.
+Each affected device also receives an individual alert with the fleet context
+included in the LLM explanation.
+
+== Remediation
+
+By default PeerWatch runs in `dry_run` mode: it logs what it _would_ do but
+takes no action.
+To enable blocking, set `remediation_mode` in `config.json`:
+
+- `"dry_run"` — safe default; logs only
+- `"confirm"` — prints the iptables command and prompts `y/N` before executing
+- `"enforce"` — executes iptables blocks immediately; requires root
+
+A device is only blocked when *all* of the following are true:
+`suspicion_score ≥ 5.0`, `severity == "high"`, the IP is not in
+`never_block`, and no active block already exists.
+
+Blocks expire automatically after 24 hours (`block_ttl_hours`).
+All block decisions — including dry-run non-executions — are recorded in
+`blocks/blocks.jsonl` for audit.
+
+*Important:* always include your gateway and the monitoring host's own IP
+in `never_block` before enabling `enforce` mode.
+
+== Tuning
+
+#figure(
+  table(
+    columns: (auto, 1fr),
+    align: (left, left),
+    table.header([*Symptom*], [*Adjustment*]),
+    [Too many alerts on benign devices],
+    [Raise `suspicion_threshold` (default 3.0); check if a device has UPnP — its OS score may oscillate during the warmup period before `known_os_families` stabilises],
+
+    [Attacks not detected fast enough],
+    [Lower `suspicion_threshold`; reduce `scan_interval_minutes`; note: lower threshold increases false-positive risk],
+
+    [Blocks firing too aggressively],
+    [Raise `block_confidence_floor` (default 5.0); add stable devices to `never_block`],
+
+    [Score not decaying between incidents],
+    [Reduce `suspicion_half_life_days` (default 3.5); lower values make the system more reactive to change but less persistent about past anomalies],
+
+    [Warmup period too long],
+    [Reduce `baseline_min_scans` (default 5); minimum recommended value is 3],
+  ),
+  caption: [Common operational issues and configuration adjustments.],
+) <tbl-tuning>
+
+== Output File Reference
+
+#figure(
+  table(
+    columns: (auto, 1fr),
+    align: (left, left),
+    table.header([*File*], [*What to look at*]),
+    [`logs/daemon.log`],
+    [Live daemon status; scan completions; LLM errors; iptables actions],
+
+    [`alerts/alerts.jsonl`],
+    [Per-device investigation alerts; `severity` and `explanation` are the key fields],
+
+    [`alerts/fleet_alerts.jsonl`],
+    [Coordinated-attack detections; check `pattern` and `ips`],
+
+    [`reports/investigation_*.json`],
+    [Full LLM investigation reports with follow-up scan output],
+
+    [`blocks/blocks.jsonl`],
+    [Complete block audit log; `executed` field distinguishes dry-run from real blocks],
+  ),
+  caption: [Output files and what to read in each.],
+) <tbl-output-files>
+
+= Evaluation Data <appendix-eval-data>
+
+== False-Positive Event Breakdown
+
+@fig-fp-events-breakdown shows the breakdown of event types that fired across
+the 322-scan real-traffic corpus used in the FP analysis (@sec-fp-analysis).
+Five events fired in total across 18 devices; none accumulated to the 3.0
+investigation threshold.
+
+#figure(
+  image("figures/fp_events_breakdown.pdf", width: 72%),
+  caption: [Event-type breakdown across the 322-scan FP corpus.
+    Five events fired in total: two `service_type_changed`, two
+    `os_family_changed`, one `port_profile_changed`.
+    All were suppressed from scoring by `known_services`,
+    `known_os_families`, or the port-visibility guard respectively.],
+) <fig-fp-events-breakdown>
+
+== Test Suite Coverage
+
+@tbl-test-breakdown lists the 222 automated tests by file and class.
+All tests run without network access, root privileges, or a running Ollama
+instance; agent and remediation tests mock subprocess and LLM calls.
+
+#figure(
+  table(
+    columns: (auto, auto, auto),
+    align: (left, right, right),
+    table.header([*Source module*], [*Stmts*], [*Coverage*]),
+    [`peerwatch/config.py`], [51], [100%],
+    [`peerwatch/__init__.py`], [5], [100%],
+    [`peerwatch/fleet_correlator.py`], [58], [98%],
+    [`peerwatch/embedder.py`], [42], [95%],
+    [`peerwatch/util.py`], [16], [94%],
+    [`peerwatch/peer_store.py`], [492], [87%],
+    [`peerwatch/remediation.py`], [160], [84%],
+    [`peerwatch/parser.py`], [184], [90%],
+    [`peerwatch/comparator.py`], [41], [66%],
+    [`peerwatch/packet_capture.py`], [151], [50%],
+    [`peerwatch/agent.py`], [299], [25%],
+    [`peerwatch/route_tracker.py`], [178], [30%],
+    table.cell(colspan: 2)[*Total (1677 stmts)*], [*67%*],
+  ),
+  caption: [Test suite coverage by source module (222 tests, `pytest --cov`).
+    `agent.py` and `route_tracker.py` have low coverage because their
+    primary code paths require a live Ollama instance, root privileges,
+    or real network interfaces — all absent in the CI environment.],
+) <tbl-test-breakdown>
+
+= Project Plan <project-plan>
+
+@tbl-project-plan shows the planned schedule across the eight-month project
+period (October 2025 – May 2026).
+The project was structured in three implementation phases, each adding a new
+detection dimension, with evaluation and writeup running in parallel from
+March onwards.
+
+#let filled() = table.cell(fill: luma(80))[]
+#let empty() = table.cell(fill: white)[]
+
+#figure(
+  table(
+    columns: (2.2fr, 1fr, 1fr, 1fr, 1fr, 1fr, 1fr, 1fr, 1fr),
+    align: (
+      left,
+      center,
+      center,
+      center,
+      center,
+      center,
+      center,
+      center,
+      center,
+    ),
+    stroke: 0.4pt,
+    table.header(
+      [*Task*],
+      [*Oct*],
+      [*Nov*],
+      [*Dec*],
+      [*Jan*],
+      [*Feb*],
+      [*Mar*],
+      [*Apr*],
+      [*May*],
+    ),
+
+    table.cell(colspan: 9, fill: luma(230))[*Background and Requirements*],
+    [Literature survey],
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    [Requirements capture],
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    [Tool selection and setup],
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+
+    table.cell(colspan: 9, fill: luma(230))[*Phase 1 — Active Scanning*],
+    [nmap scan loop and XML ingest],
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    [`PeerStore` and identity keying],
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    [Scoring engine and decay],
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    [Phase 1 test suite],
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+
+    table.cell(colspan: 9, fill: luma(230))[*Phase 2 — Passive Observation*],
+    [Scapy capture loop],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    [TTL, ARP, TCP fingerprint signals],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    [Route tracking and ASN lookup],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    empty(),
+    empty(),
+    [Phase 2 test suite],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+
+    table.cell(
+      colspan: 9,
+      fill: luma(230),
+    )[*Phase 3 — Fleet Correlation and Agent*],
+    [`FleetCorrelator` and patterns],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    [`SuspiciousAgent` and Ollama],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    [Remediation module],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    empty(),
+    [Phase 3 test suite],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+
+    table.cell(colspan: 9, fill: luma(230))[*Evaluation*],
+    [Attack scenario evaluation],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    [False-positive analysis],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    [Performance characterisation],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+
+    table.cell(colspan: 9, fill: luma(230))[*Writeup*],
+    [Chapter 1–2 (intro, background)],
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    [Chapter 3 (requirements)],
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    [Chapter 4 (design/implementation)],
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    filled(),
+    empty(),
+    empty(),
+    [Chapter 5 (evaluation)],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    filled(),
+    [Chapter 6 and appendices],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+    [Review and submission],
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    empty(),
+    filled(),
+  ),
+  caption: [Project plan. Dark cells indicate planned active work periods.
+    Implementation phases are sequential; writeup runs in parallel
+    from November onwards.],
+) <tbl-project-plan>
+
+*Milestones:*
+
+#table(
+  columns: (auto, 1fr),
+  stroke: none,
+  inset: (y: 3pt),
+  [M1 — End of November 2025:],
+  [Requirements finalised; tool stack selected; development environment configured.],
+
+  [M2 — End of January 2026:],
+  [Phase 1 complete; `PeerStore` and scoring engine passing full test suite.],
+
+  [M3 — End of February 2026:],
+  [Phase 2 complete; passive capture signals integrated and tested.],
+
+  [M4 — End of March 2026:],
+  [Phase 3 complete; fleet correlation, LLM agent, and remediation implemented.],
+
+  [M5 — End of April 2026:],
+  [Evaluation complete; false-positive rate and attack scenario results measured.],
+
+  [M6 — Mid May 2026:], [Writeup submitted.],
+)
+
+= Interim Report <interim-report>
+
+
+== Progress Summary
+
+Phase 1 of the project is complete.
+The core detection pipeline — periodic nmap scanning, persistent device identity
+storage, fingerprint comparison, and suspicion scoring — is implemented and
+tested.
+
+The following deliverables are in place:
+
+- *`PeerStore`*: a MAC-keyed in-memory identity store with JSON persistence.
+  Each peer record holds its current fingerprint (OS candidates, open ports,
+  service map), full identity event history, and a floating-point suspicion score.
+  Volatile devices (those that cannot be fingerprinted to a stable MAC address)
+  are keyed by IP and flagged separately.
+
+- *nmap scan loop*: `daemon.py` drives periodic `nmap -sV -O --osscan-guess`
+  scans of the configured subnet.
+  Raw XML output is converted to normalised JSON, deduplicated, and ingested
+  into `PeerStore` via `add_or_update_peer()`.
+  The daemon supports a configurable scan interval with a rate-limit floor to
+  prevent overlapping scans.
+
+- *Fingerprint comparison engine*: `_compare_fingerprints()` detects four
+  categories of drift: OS family change (candidate-set intersection),
+  port-profile drift (Jaccard similarity), service-type change on known ports,
+  and port/protocol mismatch.
+  Weighted scoring with exponential decay is implemented via `PeerWatchConfig`.
+
+- *`SuspiciousAgent`* (basic): LLM investigation via Phi-4 / Ollama is working
+  end-to-end.
+  A rule-based fallback is implemented for offline deployments.
+
+- *Test suite*: 89 tests covering `PeerStore`, the comparison engine,
+  `NmapParser`, configuration, persistence, and all nine active-scan attack
+  scenarios (A–I).
+  All pass.
+
+Chapters 1 and 2 of the writeup are drafted.
+Chapter 3 (requirements) is approximately 70% complete.
+
+== Problems Encountered
+
+*nmap OS fingerprint instability.*
+The most significant challenge encountered during Phase 1 was the instability
+of nmap's OS detection on real hardware.
+During early testing against a home network, several devices produced different
+OS candidate sets across consecutive scans with no hardware changes, causing
+the scoring engine to fire `os_family_changed` spuriously.
+The root cause was traced to UPnP service response variance: when a device's
+UPnP endpoint responds with an `icslap`-type header, nmap's fingerprint database
+matches it to Fortinet/Vonage/Polycom OS families; when it responds with a
+`upnp-Microsoft IIS httpd` header, the match is Windows.
+The same physical device switches between these depending on which endpoint
+handles the probe first.
+
+The initial implementation treated every OS candidate set as a single
+normalised string, which made this oscillation appear as a genuine identity
+change.
+The fix was to represent OS candidates as a set of strings and compare via
+intersection: if the incoming and stored candidate sets share any family token,
+no OS change is reported.
+This required revisiting the `NormalisedData` schema and the `PeerStore`
+ingestion logic, adding approximately three days of unplanned work.
+
+*Embedding-based comparison abandoned.*
+An early design explored using sentence embeddings to compare device
+fingerprints, treating each fingerprint as a natural-language description and
+computing cosine similarity.
+This was motivated by the hope that embeddings would generalise across minor
+nmap vocabulary changes without explicit field-by-field rules.
+In practice, embedding similarity was too coarse: semantically similar
+fingerprints (e.g. "Linux 4.x" vs "Linux 5.x") scored identically to
+genuinely different ones at the threshold required to suppress legitimate
+version changes.
+The approach was replaced by the current structured comparison engine, which
+gives precise control over which fields trigger which events and at what
+thresholds.
+The embedder module (`embedder.py`) remains in the codebase but is unused in
+the main detection pipeline.
+
+*Config proliferation.*
+As more scoring weights and threshold parameters were added, maintaining them
+as constructor arguments became unwieldy.
+A Pydantic `PeerWatchConfig` model was introduced in week 8 to centralise all
+thresholds, weights, and daemon settings with type validation and JSON
+serialisation.
+This required refactoring all existing components to accept a config parameter,
+adding approximately two days of unplanned work, but the result is a cleaner
+architecture that will simplify Phase 2 and Phase 3 integration.
+
+== Revised Schedule
+
+The Phase 1 work took approximately one week longer than planned, primarily due
+to the OS fingerprint instability investigation.
+This does not affect the overall project timeline: the float in the evaluation
+phase (originally planned as four weeks) absorbs the delay.
+The revised schedule advances Phase 2 start to mid-January and compresses the
+passive capture implementation from six weeks to five, which is achievable
+given that the Scapy capture loop infrastructure is simpler than the nmap
+pipeline it mirrors.
+
+#figure(
+  table(
+    columns: (2fr, auto, auto, auto),
+    align: (left, center, center, left),
+    table.header([*Phase*], [*Original end*], [*Revised end*], [*Status*]),
+    [Background and requirements], [Nov 2025], [Nov 2025], [Complete],
+    [Phase 1 — Active scanning],
+    [Jan 2026],
+    [Jan 2026],
+    [Complete (1 week slip absorbed)],
+
+    [Phase 2 — Passive observation], [Feb 2026], [Feb 2026], [On track],
+    [Phase 3 — Fleet and agent], [Mar 2026], [Mar 2026], [Not started],
+    [Evaluation], [Apr 2026], [Apr 2026], [Not started],
+    [Writeup and submission], [May 2026], [May 2026], [Chapters 1–2 drafted],
+  ),
+  caption: [Revised project schedule as of January 2026.],
+) <tbl-revised-schedule>
+
+== Plan for Remainder of Project
+
+*Phase 2 (January–February 2026).*
+Implement the passive observation layer using Scapy.
+Target signals: TTL baseline tracking, ARP reply conflict detection, TCP stack
+fingerprinting against p0f-style heuristics, IP ID counter monitoring, and
+route path stability via traceroute with Team Cymru ASN enrichment.
+Each signal will be implemented as an independent `_observe_*()` method and
+tested in isolation before integration.
+
+*Phase 3 (February–March 2026).*
+Implement `FleetCorrelator` for coordinated attack detection, extend
+`SuspiciousAgent` with fleet context injection and automated follow-up scans,
+and implement the `Remediator` with iptables enforcement and TTL-based
+auto-unblock.
+
+*Evaluation (March–April 2026).*
+Run the active-scan attack scenario suite (A–I) against the full three-phase
+pipeline, conduct false-positive analysis on real home-network traffic, and
+characterise performance.
+
+*Writeup (ongoing).*
+Complete Chapters 3–6 alongside implementation; target one chapter draft per
+phase completion.
+
+= Use Case Specifications <appendix-usecases>
+
+Full specifications for the three most security-critical use cases identified
+in @use-cases.
+
+== UC3 — Compare Fingerprint Against Baseline
+
+#table(
+  columns: (auto, 1fr),
+  stroke: none,
+  inset: (y: 4pt),
+  [*Use case ID*], [UC3],
+  [*Name*], [Compare fingerprint against baseline],
+  [*Primary actor*], [Daemon],
+  [*Trigger*],
+  [A new nmap scan result is ingested for a device already present in `PeerStore`],
+
+  [*Preconditions*],
+  [Device has completed the baseline warmup period (`baseline_min_scans` scans recorded). `PeerStore` holds a prior fingerprint for the device's MAC address.],
+
+  [*Main flow*],
+  [
+    1. Daemon calls `PeerStore.add_or_update_peer(data)` with the new `NormalisedData`.
+    2. `_compare_fingerprints()` computes OS-candidate-set intersection, port-set Jaccard similarity, per-port service-type delta, and port/protocol mismatch.
+    3. For each detected drift event, `record_event()` appends an `IdentityEvent` to the peer's history.
+    4. Weighted scoring increments `suspicion_score`; `known_services` and `known_os_families` suppress re-scoring on already-seen transitions.
+    5. If `suspicion_score >= suspicion_threshold`, the peer is marked for investigation.
+  ],
+
+  [*Alternative flows*],
+  [
+    - *No drift detected*: no events recorded; score unchanged.
+    - *MAC conflict*: `_resolve_conflict()` fires `identity_conflict_detected` and merges or displaces the ghost peer.
+    - *Volatile device*: comparison proceeds with IP as key; MAC-based deduplication skipped.
+  ],
+
+  [*Postconditions*],
+  [Peer record updated with new fingerprint, events, and score. If score crossed threshold, peer is in the investigation queue for the current tick.],
+)
+
+== UC4 — Trigger LLM Investigation
+
+#table(
+  columns: (auto, 1fr),
+  stroke: none,
+  inset: (y: 4pt),
+  [*Use case ID*], [UC4],
+  [*Name*], [Trigger LLM investigation],
+  [*Primary actor*], [Daemon],
+  [*Trigger*],
+  [`peer.suspicion_score >= suspicion_threshold` at the end of a tick],
+
+  [*Preconditions*],
+  [Fleet correlation has completed for the current tick. Ollama is running (or rule-based fallback is acceptable).],
+
+  [*Main flow*],
+  [
+    1. `SuspiciousAgent.investigate_all(fleet_events)` iterates over all peers above threshold.
+    2. For each peer, `_format_peer_context()` builds a structured prompt from fingerprint, event history, known services, and fleet context (if any fleet events reference this peer).
+    3. The prompt is sent to Phi-4 via LangChain with `temperature=0` and `format="json"`.
+    4. The response is validated against `AgentDecision` schema: `explanation`, `severity`, `recommended_scans`, `recommended_actions`.
+    5. `_build_auto_identity_checks()` appends `ssh_hostkey` and `ssl_cert` checks for any peer with open SSH or HTTPS ports, independent of the LLM output.
+    6. Recommended scans are executed (`nmap`, `traceroute`, `tcpdump`, `ssh_hostkey`, `ssl_cert`).
+    7. An `InvestigationReport` is written to `reports/` and appended to `alerts/alerts.jsonl`.
+  ],
+
+  [*Alternative flows*],
+  [
+    - *Ollama unavailable*: `_analyse()` catches the exception and calls `_rule_based_fallback()`, which assigns severity by score threshold and recommends scans by event type. Investigation proceeds without LLM output.
+    - *Schema validation failure*: falls through to rule-based fallback.
+    - *No suspicious peers*: method returns immediately; no reports written.
+  ],
+
+  [*Postconditions*],
+  [Investigation report on disk. `alerts/alerts.jsonl` updated. Scan results (including any changed SSH keys or TLS certificates) ingested back into `PeerStore`.],
+
+  [*Security note*],
+  [Raw packet payloads, hostnames, and peer-supplied banner strings are never included in the LLM prompt. All prompt data is derived from structured `PeerStore` fields to mitigate indirect prompt injection @promptinjection.],
+)
+
+== UC7 — Approve Remediation Block
+
+#table(
+  columns: (auto, 1fr),
+  stroke: none,
+  inset: (y: 4pt),
+  [*Use case ID*], [UC7],
+  [*Name*], [Approve remediation block],
+  [*Primary actor*], [Administrator],
+  [*Trigger*],
+  [`Remediator.evaluate()` returns a non-`None` `BlockAction` in `confirm` mode],
+
+  [*Preconditions*],
+  [All five guards cleared: IP/MAC not in `never_block`; `suspicion_score >= block_confidence_floor`; `severity == "high"`; IP available; no active block for this IP. `remediation_mode == "confirm"`.],
+
+  [*Main flow*],
+  [
+    1. `Remediator.act()` prints the target IP, suspicion score, reason string, expiry time, and the exact iptables commands to stdout.
+    2. Administrator reads the prompt and types `y` to confirm or `N` (or Enter) to decline.
+    3. On confirmation: iptables `INPUT DROP` and `OUTPUT DROP` rules are inserted for the target IP. A `BlockRecord` with `executed=True` is appended to `blocks/blocks.jsonl`.
+    4. On decline: a `BlockRecord` with `executed=False` is appended to `blocks/blocks.jsonl` for audit purposes.
+  ],
+
+  [*Alternative flows*],
+  [
+    - *EOF / keyboard interrupt at prompt*: treated as decline; block is not executed.
+    - *`dry_run` mode*: UC7 reduces to a no-op — `act()` logs the would-be commands and writes `executed=False` without prompting.
+    - *`enforce` mode*: UC7 is bypassed — block is executed immediately without operator interaction.
+    - *iptables failure*: `_run_cmds()` logs the error; `BlockRecord` written with `executed=False`.
+  ],
+
+  [*Postconditions*],
+  [Block decision recorded in `blocks/blocks.jsonl` regardless of outcome. If executed, block is active until `expires_at`; `unblock_expired()` removes the iptables rules on the next tick after TTL expiry.],
+
+  [*Security note*],
+  [The LLM is not in the authorisation path. The decision to block is made purely by the rule-based guard chain; the LLM severity classification is one input to that chain, but the chain itself is deterministic.],
+)
+
+= Source Code <source-code>
+
+The full source code is available at:
+
+#align(center)[`https://github.com/chitoroagad/peerwatch`]
+
+The commit pinned to this submission is noted below.
+Repository structure follows the layout described in @system-manual.
+
+#table(
+  columns: (auto, 1fr),
+  stroke: none,
+  inset: (y: 3pt),
+  [*Submission commit*], [`a3035aa21e6c72cd37c89cb8e49b6961730c8c44`],
+  [*Language*], [Python 3.13],
+  [*Test command*],
+  [`nix develop && pytest` (222 tests, no network or root required)],
+
+  [*Writeup command*],
+  [`nix develop .#writeup && typst compile writeup/main.typ`],
+)
