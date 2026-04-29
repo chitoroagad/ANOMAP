@@ -15,9 +15,9 @@
   title: "PeerWatch: Multi-Signal Network Anomaly Detection for Local Area Networks",
   subtitle: none,
   date: "29 April 2026",
-  author: "Candidate SWSG5",
+  author: "Darius Chitoroaga",
   degree: "MEng Computer Science",
-  supervisor: "",
+  supervisor: "Kaan Aksit",
   distribution: "open",
 )
 
@@ -4686,7 +4686,7 @@ Repository structure follows the layout described in @system-manual.
   columns: (auto, 1fr),
   stroke: none,
   inset: (y: 3pt),
-  [*Submission commit*], [`a3035aa21e6c72cd37c89cb8e49b6961730c8c44`],
+  [*Submission commit*], [`326c769de8ac59eb70d91712efb99c7e929bbedc`],
   [*Language*], [Python 3.13],
   [*Test command*],
   [`nix develop && pytest` (222 tests, no network or root required)],
