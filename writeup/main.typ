@@ -14,10 +14,10 @@
   logo-path: "ucl_logo.png",
   title: "PeerWatch: Multi-Signal Network Anomaly Detection for Local Area Networks",
   subtitle: none,
-  date: "24 April 2026",
-  author: "Darius Chitoroaga",
+  date: "29 April 2026",
+  author: "Candidate SWSG5",
   degree: "MEng Computer Science",
-  supervisor: "Kaan Aksit",
+  supervisor: "",
   distribution: "open",
 )
 
@@ -298,7 +298,7 @@ The specific _goals_ are:
 
 + *Empirical evaluation.* Measure detection performance across a suite of
   simulated attack scenarios drawn from MITRE ATT&CK and CVE-documented
-  techniques, and characterise the false positive rate under clean traffic.
+  techniques, and characterise the false-positive rate under clean traffic.
 
 == Scope <scope>
 
@@ -634,7 +634,7 @@ Cross-checking OUI vendor against nmap-detected OS family catches a class of sub
 neither signal alone would flag: an Apple OUI combined with a Linux OS detection indicates
 the claimed hardware identity is inconsistent with the network stack behaviour.
 
-This signal carries elevated false positive risk.
+This signal carries elevated false-positive risk.
 MAC address randomisation, enabled by default in iOS 14+ and Android 10+, assigns
 locally-administered addresses per network, making OUI attribution unreliable for
 mobile devices.
@@ -643,7 +643,7 @@ the guest OS.
 OUI correlation is therefore treated as a supporting signal rather than a primary
 detection trigger.
 
-== Related Work and Tool Survey
+== Related Work and Tool Survey <related-work-and-tools>
 
 @lan-layer-attack established the attack landscape and @device-fingerprinting the detection signals.
 This section surveys existing tools and research, explains why each fails to address
@@ -774,7 +774,7 @@ The model operates in an explanation role, producing a structured investigation 
 it plays no part in the detection or scoring decision.
 This design adds interpretability without introducing a new attack surface.
 
-== Tools and Libraries
+== Tools and Libraries <tools-and-libraries>
 
 This section introduces non-obvious tool choices and the rationale behind each.
 Per the scope stated in @approach, PeerWatch targets hardware a SOHO administrator
@@ -816,7 +816,7 @@ Libpcap @libpcap is the standard C library for low-level packet capture on POSIX
 systems; it provides a file descriptor over a network interface in promiscuous mode
 and a BPF (Berkeley Packet Filter) compilation interface for pushing kernel-level
 packet filters to the capture path.
-BPF filters are boolean expressions over packet fields (i.e.
+BPF filters are boolean expressions over packet fields (i.e.,
 `arp or (tcp and not port 22)`) that are compiled to a bytecode program executed
 in the kernel before any packet reaches userspace, reducing the volume of data
 Python must handle.
@@ -920,9 +920,9 @@ port profile drift below 0.6 is consistent with routine service changes.
 Assigning uniform weight to all signals would cause low-evidence events to dominate
 the score when they fire frequently, drowning higher-confidence signals in noise.
 
-Axelsson @axelsson demonstrates that in intrusion detection systems the false positive
+Axelsson @axelsson demonstrates that in intrusion detection systems the false-positive
 rate of individual signals has an outsized effect on overall system utility: even at
-high true positive rates, a signal with a 1% false positive rate will produce more
+high true-positive rates, a signal with a 1% false-positive rate will produce more
 false alerts than true ones on a typical network where attacks are rare.
 The practical implication is that signal weights should reflect each signal's
 discriminative power: its ability to distinguish attack from benign change in the
@@ -936,9 +936,9 @@ under legitimate operation.
 
 Independent signals with low individual discriminative power can be combined to achieve
 high discriminative power.
-If two signals each have a 10% false positive rate and fire independently, the joint
+If two signals each have a 10% false-positive rate and fire independently, the joint
 probability of both firing simultaneously on a benign event is approximately 1%,
-a tenfold reduction in false positive rate with no loss of true positive rate for attacks
+a tenfold reduction in false-positive rate with no loss of true-positive rate for attacks
 that trigger both.
 
 This compositing effect is the formal justification for PeerWatch's threshold design:
@@ -965,7 +965,7 @@ to the deployment context.
 The cold-start problem, first observed in recommender systems and fraud detection,
 applies directly to device identity tracking.
 A device seen for the first time has no baseline; scoring drift against a single
-observation produces high false positive rates on legitimate newly-discovered devices.
+observation produces high false-positive rates on legitimate newly-discovered devices.
 PeerWatch withholds scoring for the first `baseline_min_scans` observations (default 5),
 recording events without contributing to the suspicion score until a stable baseline
 is established.
@@ -974,10 +974,10 @@ is established.
 
 The investigation threshold determines the operating point on the precision-recall
 curve.
-Lowering the threshold increases true positive rate at the cost of false positive rate;
+Lowering the threshold increases true-positive rate at the cost of false-positive rate;
 raising it reduces false alerts at the risk of missed detections.
 Axelsson @axelsson shows that for realistic base rates of attacks on a typical network,
-even modest false positive rates render a detection system impractical; an alert that
+even modest false-positive rates render a detection system impractical; an alert that
 fires ten times per day on a clean network will be ignored within a week, eliminating
 any security value.
 
@@ -989,18 +989,18 @@ attack traffic and clean-traffic conditions, providing the data an operator need
 adjust the threshold for their specific environment.
 
 This chapter has established the foundations on which PeerWatch is built.
-Section 2.1 defined the threat landscape — the attack techniques that existing
+@lan-layer-attack defined the threat landscape — the attack techniques that existing
 single-signal tools cannot detect and that motivate a multi-signal approach.
-Section 2.2 surveyed the fingerprinting signals available to a locally-deployed monitor,
+@device-fingerprinting surveyed the fingerprinting signals available to a locally-deployed monitor,
 from active nmap probing to passive TCP stack observation and cryptographic anchors.
-Section 2.3 positioned PeerWatch against existing tools and research, identifying the
+@related-work-and-tools positioned PeerWatch against existing tools and research, identifying the
 vacant design space it occupies.
-Sections 2.4 and 2.5 introduced the tools the implementation relies on and the
+@tools-and-libraries and @evidence-accumulation introduced the tools the implementation relies on and the
 theoretical basis for combining their outputs into a coherent scoring model.
-Chapter 3 translates this context into a structured requirements specification and
+@requirements-and-analysis translates this context into a structured requirements specification and
 analyses it into an initial design.
 
-= Requirements and Analysis
+= Requirements and Analysis <requirements-and-analysis>
 
 == Detailed Problem Statement <problem-statement>
 
@@ -1036,7 +1036,7 @@ MAC address randomisation, enabled by default in modern mobile operating systems
 breaks MAC-keyed identity continuity for mobile devices.
 A router reconfiguration shifts TTL values and route paths simultaneously for all
 subnet devices.
-These events define the false positive ceiling: any signal that fires on them
+These events define the false-positive ceiling: any signal that fires on them
 without corroboration or weighting will produce an alert rate that renders the
 system unusable in practice @axelsson.
 Evidence accumulation, signal weighting, and score decay are therefore
@@ -1727,7 +1727,7 @@ for match in osmatches:
 nmap returns multiple `osmatch` entries ordered by descending accuracy.
 Rather than recording only the top-ranked family, `NmapParser` iterates all entries and
 builds a dict mapping each OS family to its best accuracy score across all matches
-i.e. `{"Linux": 96, "Google": 93}` for an Android device.
+i.e., `{"Linux": 96, "Google": 93}` for an Android device.
 This representation matters because nmap's top pick is not deterministic: slight variation
 in TCP response timing between scans can cause it to reorder "Linux" and "Microsoft
 Windows" as the top result for the same device.
@@ -1740,7 +1740,7 @@ non-determinism.
 Port extraction handles two xmltodict edge cases: when nmap reports exactly one open port,
 xmltodict returns a dict rather than a list, so `_extract_ports()` normalises both forms.
 Service strings are constructed as `name + "-" + product` where both are present
-(e.g.\ `ssh-OpenSSH`), falling back to whichever is available.
+(e.g.,\ `ssh-OpenSSH`), falling back to whichever is available.
 `open_ports` is sorted before storage so that Jaccard distance computation in PeerStore
 is independent of scan ordering.
 
@@ -1787,7 +1787,7 @@ flag.
 indexes and branching on the number of candidates found:
 
 - *Zero candidates* — the device is new; `_create_peer()` is called.
-  The first scan's service types are pre-loaded into `known_services` so day-one
+  The first scan's service types are preloaded into `known_services` so day-one
   observations do not immediately trigger service-change events.
 - *One candidate* — the existing peer is updated. Suspicion decay is applied first,
   then fingerprint comparison, then the peer record is refreshed.
@@ -1816,7 +1816,7 @@ This choice is motivated by nmap's non-determinism: a device at 95% confidence f
 "Sony" and "Linux" may flip its top-ranked entry between scans depending on TCP response
 timing.
 Set intersection is stable under this jitter: `os_family_changed` fires only when the
-candidate sets are genuinely disjoint, i.e. no previously observed OS family appears in
+candidate sets are genuinely disjoint, i.e., no previously observed OS family appears in
 the new scan at all.
 
 *Port-set Jaccard similarity.*
@@ -1831,7 +1831,7 @@ that intermittently suppresses all ports.
 Only the first token of nmap's service string is compared: `ssh` from `ssh-OpenSSH`,
 `http` from `http-nginx`.
 Version upgrades within the same protocol family are therefore not flagged — only a
-genuine protocol change on a port (e.g. `ssh` → `http`) triggers
+genuine protocol change on a port (e.g., `ssh` → `http`) triggers
 `service_type_changed` (+1.0 per port).
 Comparison is limited to `shared_ports = prev_ports & curr_ports`; a port present in
 only one scan is captured by the Jaccard check, not here.
@@ -1848,7 +1848,7 @@ events) is:
 $ s = 0.5 dot.op s_"OS" + 0.3 dot.op J + 0.2 dot.op s_"svc" $
 where $s_"OS" = lr(|F_"prev" inter F_"curr"|) / lr(|F_"prev" union F_"curr"|)$ is the
 Jaccard similarity of the two OS candidate-family sets (not a binary flag, so partial
-overlap (e.g. one family in common out of three) gives a score between 0 and 1);
+overlap (e.g., one family in common out of three) gives a score between 0 and 1);
 $J$ is the port-set Jaccard from the previous check; and $s_"svc"$ is the fraction of
 shared ports whose service type was unchanged
 ($s_"svc" = 1 - lr(|"changed ports"|) / lr(|"shared ports"|)$, or 1.0 when there are no
@@ -2125,7 +2125,7 @@ option absent, −0.3 per extra option present; +1.0 bonus for exact window size
 +0.5 for window in range.
 A minimum score of 2.0 is required to suppress guesses on sparse input.
 The inferred OS is cross-referenced against the peer's nmap `os_candidates` set via a
-family mapping (e.g.\ `"Linux"` covers both `"Linux"` and `"Android"` in nmap output).
+family mapping (e.g.,\ `"Linux"` covers both `"Linux"` and `"Android"` in nmap output).
 A contradiction fires `tcp_fingerprint_mismatch` (+2.0).
 
 *IP ID counter anomaly.*
@@ -2622,7 +2622,7 @@ scoring anyway.
 `pytest.approx()` is used throughout for float score comparisons, since
 floating-point accumulation across multiple increments makes exact equality
 assertions brittle.
-`PYTHONPATH = ["src"]` is configured via `pyproject.toml`, so no package install
+`PYTHONPATH = ["src"]` is configured via `pyproject.toml`, so no package installation
 step is required to run the suite.
 
 *Real-LAN evaluation.*
@@ -3067,7 +3067,7 @@ Four properties of the guard layer are verified independently.
 / F5 — Min-peers gate: A single peer fires `arp_spoofing_detected` with `fleet_arp_min_peers=2`.
   No fleet pattern fires; no `fleet_correlation_boost` event is recorded.
   This prevents isolated gratuitous ARP replies, which are standard network
-  behaviour (e.g. a host announcing its IP after a link change), from triggering
+  behaviour (e.g., a host announcing its IP after a link change), from triggering
   a fleet alert.
 
 / F6 — Boost cap: A peer simultaneously matches both `arp_poisoning` (+2.0) and `identity_sweep`
@@ -3081,7 +3081,7 @@ Four properties of the guard layer are verified independently.
 / F7 — First-tick window: `last_tick_at` is `None` (system not yet through its first tick).
   `analyse()` returns an empty list immediately without inspecting any events.
   No fleet pattern can fire before the event window is established, preventing
-  spurious alerts on startup when the peer store may be partially populated.
+  spurious alerts on startup when `PeerStore` may be partially populated.
 
 / F11 — Staleness exclusion: Three peers each have an `arp_spoofing_detected` event timestamped one second
   before `last_tick_at`; one peer also has a current in-window event.
@@ -3224,7 +3224,7 @@ Results are parsed by `_parse_ssh_fingerprints()` and
 and `PeerStore.ingest_ssl_cert()`, so subsequent ticks benefit from the updated
 baseline.
 Changed fingerprints are annotated directly in the `ScanResult.output` field
-(e.g. `[KEY CHANGED on ports [22]]`) for operator-readable audit trails.
+(e.g., `[KEY CHANGED on ports [22]]`) for operator-readable audit trails.
 
 === Prompt Injection Resistance
 
@@ -3439,7 +3439,7 @@ Severity classification is therefore not strictly reproducible across
 model versions.
 The rule-based fallback (@sec-agent-eval) provides a deterministic lower bound
 on system behaviour, and the structured output schema constrains the output
-space, but the explanation text and borderline severity assignments (e.g. a
+space, but the explanation text and borderline severity assignments (e.g., a
 score of 3.5 that the LLM rates `medium` vs `low`) remain version-dependent.
 
 === Scan Interval Blind Spot
@@ -3551,7 +3551,7 @@ arpwatch @arpwatch monitors a single ARP signal; NIDS tools such as Snort
 device-identity drift; enterprise platforms such as Darktrace @darktrace match
 or exceed PeerWatch's capabilities but require infrastructure that places them
 beyond the scope of the target deployment context.
-Within its stated scope( subnets of up to 254 hosts, operated by an
+Within its stated scope (subnets of up to 254 hosts, operated by an
 independent administrator on existing hardware) the system is fit for purpose.
 
 *Known limitations.*
@@ -3585,6 +3585,53 @@ the route tracker; a service change triggers a certificate fetch whose
 fingerprint is compared to the stored baseline.
 The seed of this pattern already exists in `_build_auto_identity_checks()`,
 which appends SSH and TLS checks unconditionally after the LLM step.
+
+#figure(
+  diagram(
+    node-stroke: 0.5pt,
+    node-corner-radius: 3pt,
+    node-inset: 6pt,
+    spacing: (3em, 2em),
+
+    node(
+      (0, 0),
+      text(size: 9pt, weight: "bold")[PeerStore],
+      name: <ps>,
+      fill: luma(225),
+    ),
+    node(
+      (2, 0),
+      text(size: 9pt)[`agent.py` (LLM)],
+      name: <agent>,
+    ),
+    node(
+      (2, 1),
+      align(center, text(
+        size: 9pt,
+      )[Trusted Executor \ #text(size: 8pt, style: "italic")[(proposed)]]),
+      name: <exec>,
+      fill: luma(245),
+      stroke: (dash: "dashed"),
+    ),
+    node(
+      (0, 1),
+      align(center, text(size: 9pt)[`route_tracker` / \ `packet_capture`]),
+      name: <passive>,
+    ),
+
+    edge(<ps>, <agent>, "->", text(size: 8pt)[evidence]),
+    edge(<agent>, <exec>, "->", text(size: 8pt)[action JSON]),
+    edge(<exec>, <passive>, "->", text(size: 8pt)[results]),
+    edge(<passive>, <ps>, "->", text(size: 8pt)[new evidence]),
+  ),
+  caption: [
+    Proposed agentic investigation loop.
+    The LLM emits structured action suggestions (e.g.,\ `{"action": "traceroute", "target": "…"}`);
+    a trusted executor runs them and feeds results back into the passive pipeline as new evidence before the next tick.
+    The LLM remains outside the execution path.
+    Dashed box is a proposed new component.
+  ],
+) <fig-agentic-loop>
 
 *Sub-protocol fingerprinting.*
 Scenario I (service mimicry, score 0.0) exploits the design decision to compare
@@ -3870,7 +3917,7 @@ sudo python daemon.py
 
 Root is required for nmap OS detection.
 On first start, PeerWatch runs a baseline period of 5 scans before scoring
-begins — anomaly events are recorded but no alerts are generated during this
+begins — anomaly events are recorded, but no alerts are generated during this
 warmup.
 You will see log lines in `logs/daemon.log` confirming each scan:
 
@@ -4357,7 +4404,7 @@ March onwards.
   [M5 — End of April 2026:],
   [Evaluation complete; false-positive rate and attack scenario results measured.],
 
-  [M6 — Mid May 2026:], [Writeup submitted.],
+  [M6 — Mid-May 2026:], [Writeup submitted.],
 )
 
 = Interim Report <interim-report>
@@ -4434,7 +4481,7 @@ computing cosine similarity.
 This was motivated by the hope that embeddings would generalise across minor
 nmap vocabulary changes without explicit field-by-field rules.
 In practice, embedding similarity was too coarse: semantically similar
-fingerprints (e.g. "Linux 4.x" vs "Linux 5.x") scored identically to
+fingerprints (e.g., "Linux 4.x" vs "Linux 5.x") scored identically to
 genuinely different ones at the threshold required to suppress legitimate
 version changes.
 The approach was replaced by the current structured comparison engine, which
