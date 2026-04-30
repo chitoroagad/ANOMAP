@@ -3754,7 +3754,7 @@ No `pip install` is required; the Nix shell is self-contained.
 After entering the shell, run tests with:
 
 ```sh
-pytest
+python -m pytest
 ```
 
 `pyproject.toml` sets `pythonpath = ["src"]` and `testpaths = ["tests"]`,
@@ -4689,7 +4689,7 @@ Repository structure follows the layout described in @system-manual.
   [*Submission commit*], [`326c769de8ac59eb70d91712efb99c7e929bbedc`],
   [*Language*], [Python 3.13],
   [*Test command*],
-  [`nix develop && pytest` (222 tests, no network or root required)],
+  [`nix develop && python -m pytest` (222 tests, no network or root required)],
 
   [*Writeup command*],
   [`nix develop .#writeup && typst compile writeup/main.typ`],
