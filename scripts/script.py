@@ -1,9 +1,9 @@
+import argparse
 import nmap
 import json
 import time
 import datetime
 
-SUBNET = "172.20.10.11/28"
 SCAN_INTERVAL = 25
 OUTPUT_JSON = "detailed_scan_history.jsonl"
 
@@ -14,12 +14,12 @@ def append_json_line(data):
         f.write(json.dumps(data) + "\n")
 
 
-def perform_scan():
+def perform_scan(subnet: str):
     nm = nmap.PortScanner()
 
     # -Pn: do not assume host discovery, but still get RTT info
     # --stats-every: disabled in python-nmap (CLI only)
-    nm.scan(hosts=SUBNET, arguments="-sS")
+    nm.scan(hosts=subnet, arguments="-sS")
 
     timestamp = datetime.datetime.now(datetime.UTC).isoformat()
     scan_result = {"timestamp": timestamp, "hosts": []}
@@ -73,12 +73,17 @@ def perform_scan():
 
 
 def main():
-    print(f"Starting detailed monitoring on {SUBNET}")
+    parser = argparse.ArgumentParser(description="Continuous nmap scan logger")
+    parser.add_argument("subnet", help="Subnet to scan, e.g. 192.168.1.0/24")
+    args = parser.parse_args()
+    subnet = args.subnet
+
+    print(f"Starting detailed monitoring on {subnet}")
     print(f"Saving JSON logs to {OUTPUT_JSON}\n")
 
     while True:
         print(f"Scanning at {datetime.datetime.now(datetime.UTC).isoformat()} ...")
-        result = perform_scan()
+        result = perform_scan(subnet)
         append_json_line(result)
         print(f" → Scan complete. Logged {len(result['hosts'])} hosts.\n")
 

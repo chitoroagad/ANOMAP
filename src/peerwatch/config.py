@@ -143,6 +143,10 @@ class PeerWatchConfig(BaseModel):
         default="phi4:latest",
         description="Ollama model used by SuspiciousAgent",
     )
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        description="Base URL of the Ollama API server",
+    )
 
     # --- Daemon ---
     subnet: str = Field(

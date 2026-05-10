@@ -79,6 +79,7 @@ sudo python daemon.py --config /path/to/config.json
 
 # One-shot (loads data/processed/*.json, runs comparator + agent once)
 python main.py
+python main.py --config /path/to/config.json
 ```
 
 **Injection demo:** drop a crafted nmap XML into `data/raw/` between scans —
@@ -98,6 +99,7 @@ All fields are optional; omitted fields use the defaults shown.
 | `suspicion_threshold`       | `3.0`            | Score that triggers LLM investigation                      |
 | `block_confidence_floor`    | `5.0`            | Minimum score to trigger a block                           |
 | `model`                     | `phi4:latest`    | Ollama model name                                          |
+| `ollama_base_url`           | `http://localhost:11434` | Ollama API server URL                            |
 | `remediation_mode`          | `dry_run`        | `dry_run` / `confirm` / `enforce`                          |
 | `never_block`               | `[]`             | IPs/MACs never blocked — **always include gateway + self** |
 | `baseline_min_scans`        | `5`              | Warmup scans before scoring begins                         |

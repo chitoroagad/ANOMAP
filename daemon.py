@@ -243,6 +243,7 @@ def run_pipeline(
         output_dir="./reports",
         model=cfg.model,
         threshold=cfg.suspicion_threshold,
+        ollama_base_url=cfg.ollama_base_url,
     )
     reports = agent.investigate_all(fleet_events=fleet_events)
 

@@ -70,13 +70,15 @@ class SuspiciousAgent:
         output_dir: str = "./reports",
         model: str = DEFAULT_MODEL,
         threshold: float = DEFAULT_SUSPICION_THRESHOLD,
+        ollama_base_url: str = "http://localhost:11434",
     ):
         self.peer_store = peer_store
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.threshold = threshold
         self.llm = init_chat_model(
-            model, model_provider="ollama", temperature=0, format="json"
+            model, model_provider="ollama", temperature=0, format="json",
+            base_url=ollama_base_url,
         )
 
     # --------------------

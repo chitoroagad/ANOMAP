@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 
+import argparse
 import glob
 import json
 import logging
@@ -122,11 +123,15 @@ PEER_STORE_PATH = Path("data/peer_store.json")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="PeerWatch one-shot pipeline")
+    parser.add_argument("--config", default="config.json", metavar="PATH")
+    args = parser.parse_args()
+
     # files = glob.glob("./data/raw/*.xml")
     # for file in files:
     #     with open(file) as f:
     #         jsonify(f)
-    cfg = load_config("config.json")
+    cfg = load_config(args.config)
 
     peer_store = PeerStore.load(PEER_STORE_PATH, config=cfg)
 
@@ -163,5 +168,6 @@ if __name__ == "__main__":
         output_dir="./reports",
         model=cfg.model,
         threshold=cfg.suspicion_threshold,
+        ollama_base_url=cfg.ollama_base_url,
     )
     agent.investigate_all()

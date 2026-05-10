@@ -34,6 +34,7 @@
 
   "suspicion_threshold": 3.0,
   "model": "phi4:latest",
+  "ollama_base_url": "http://localhost:11434",
 
   "subnet": "192.168.1.0/24",
   "scan_interval_minutes": 5,
